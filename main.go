@@ -15,6 +15,7 @@ import (
 	cnn2suite "github.com/openfluke/w2a/suites/cnn2"
 	cnn3suite "github.com/openfluke/w2a/suites/cnn3"
 	rnnsuite "github.com/openfluke/w2a/suites/rnn"
+	lstmsuite "github.com/openfluke/w2a/suites/lstm"
 	rmsnsuite "github.com/openfluke/w2a/suites/rmsnorm"
 	swigsuite "github.com/openfluke/w2a/suites/swiglu"
 )
@@ -81,6 +82,12 @@ func main() {
 			Desc: "vanilla tanh RNN; FormatNone×34 + quants × backends + train grids",
 			Run:  rnnsuite.RunAll,
 			Menu: rnnSubmenu,
+		},
+		{
+			Name: "LSTM",
+			Desc: "LSTM i/f/g/o; FormatNone×34 + quants × backends + train grids",
+			Run:  lstmsuite.RunAll,
+			Menu: lstmSubmenu,
 		},
 		// Add more suites here as layers land (Embedding, …).
 	}
@@ -580,6 +587,55 @@ func rnnSubmenu() {
 		fmt.Println()
 		_ = withSuiteLog(func() error {
 			if err := rnnsuite.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
+	}
+}
+
+func lstmSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := lstmsuite.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("LSTM suite")
+		fmt.Println("  [0] Run ALL LSTM cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := lstmsuite.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ LSTM: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := lstmsuite.RunOne(n); err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return err
 			}

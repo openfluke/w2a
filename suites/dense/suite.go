@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/dense"
 	"github.com/openfluke/welvet/quant"
@@ -44,12 +45,15 @@ func Cases() []Case {
 func RunAll() error {
 	var fails []string
 	for i, c := range Cases() {
+		suites.BeginCase()
 		fmt.Printf("  [%d] %s … ", i+1, c.Name)
 		if err := c.Run(); err != nil {
+			suites.EndCase("dense", c.Name, "FAIL", err.Error())
 			fmt.Printf("FAIL\n      %v\n", err)
 			fails = append(fails, fmt.Sprintf("%d:%s", i+1, c.Name))
 			continue
 		}
+		suites.EndCase("dense", c.Name, "PASS", "")
 		fmt.Println("PASS")
 	}
 	if len(fails) > 0 {
@@ -63,11 +67,14 @@ func RunOne(n int) error {
 	if n < 1 || n > len(cs) {
 		return fmt.Errorf("dense: case %d out of range 1..%d", n, len(cs))
 	}
+	suites.BeginCase()
 	fmt.Printf("  [%d] %s … ", n, cs[n-1].Name)
 	if err := cs[n-1].Run(); err != nil {
+		suites.EndCase("dense", cs[n-1].Name, "FAIL", err.Error())
 		fmt.Printf("FAIL\n      %v\n", err)
 		return err
 	}
+	suites.EndCase("dense", cs[n-1].Name, "PASS", "")
 	fmt.Println("PASS")
 	return nil
 }
@@ -563,12 +570,17 @@ func fullMatrixGaps() error {
 		} else {
 			err = smoke[float32](p.DType, p.Format, p.Backend)
 		}
+		status := "OK"
+		note := ""
 		if err != nil {
 			failN++
+			status = "GAP"
+			note = err.Error()
 			if len(samples) < 6 {
 				samples = append(samples, fmt.Sprintf("%s/%s/%s", p.DType, p.Format, p.Backend))
 			}
 		}
+		rec("census", p.DType.String(), p.Format.String(), p.Backend.String(), "-", status, note)
 	}
 	ok := len(perms) - failN
 	fmt.Printf("(%d cells, %d ok, %d gaps; e.g. %s) ", len(perms), ok, failN, strings.Join(samples, ", "))

@@ -46,6 +46,7 @@ func TimedMatrix() error {
 			fwdNs, bwdNs, status, note := timeCell(dt, be, batch, in, out, warm, iters)
 			fmt.Printf("  %-12s %-10s %10s %10s %8s  %s\n",
 				dt.String(), be.String(), fmtNs(fwdNs), fmtNs(bwdNs), status, note)
+			rec("fwd_bwd", dt.String(), "None", be.String(), "-", status, note)
 			switch status {
 			case "OK":
 				okN++
@@ -188,6 +189,7 @@ func TimedQuantMatrix() error {
 			fwdNs, bwdNs, status, note := timeQuantCell(f, be, batch, in, out, warm, iters)
 			fmt.Printf("  %-14s %-10s %10s %10s %8s  %s\n",
 				f.String(), be.String(), fmtNs(fwdNs), fmtNs(bwdNs), status, note)
+			rec("fwd_bwd", "float32", f.String(), be.String(), "-", status, note)
 			switch status {
 			case "OK":
 				okN++

@@ -60,8 +60,10 @@ func timedTrainFormatNoneGrids(sizes []int, title string) error {
 		for _, dt := range core.AllDTypes {
 			for _, be := range backends {
 				ns, status, note := timeTrainCube(n, be, batch, dim, warm, iters, lr, dt, quant.FormatNone)
+				grid := fmt.Sprintf("%dx%dx%d", n, n, n)
 				fmt.Printf("  %-8s %-12s %-10s %8d %12s %8s  %s\n",
 					fmt.Sprintf("%d×%d×%d", n, n, n), dt.String(), be.String(), n*n*n, fmtNs(ns), status, note)
+				rec("train", dt.String(), "None", be.String(), grid, status, note)
 				switch status {
 				case "OK":
 					okN++
@@ -104,8 +106,10 @@ func timedTrainQuantGrids(sizes []int, title string) error {
 		for _, f := range quant.AllFormats {
 			for _, be := range backends {
 				ns, status, note := timeTrainCube(n, be, batch, dim, warm, iters, lr, core.DTypeFloat32, f)
+				grid := fmt.Sprintf("%dx%dx%d", n, n, n)
 				fmt.Printf("  %-8s %-14s %-10s %8d %12s %8s  %s\n",
 					fmt.Sprintf("%d×%d×%d", n, n, n), f.String(), be.String(), n*n*n, fmtNs(ns), status, note)
+				rec("train", "float32", f.String(), be.String(), grid, status, note)
 				switch status {
 				case "OK":
 					okN++

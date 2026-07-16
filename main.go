@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/openfluke/w2a/suites"
 	denssuite "github.com/openfluke/w2a/suites/dense"
 )
 
@@ -18,7 +19,7 @@ type suite struct {
 }
 
 func main() {
-	suites := []suite{
+	allSuites := []suite{
 		{
 			Name: "Dense",
 			Desc: "34 dtypes, timed matrix, gap census (see welvet README)",
@@ -33,7 +34,7 @@ func main() {
 		fmt.Println()
 		fmt.Println("w2a — Welvet test harness")
 		fmt.Println("  [0] Run ALL suites")
-		for i, s := range suites {
+		for i, s := range allSuites {
 			fmt.Printf("  [%d] %s — %s\n", i+1, s.Name, s.Desc)
 		}
 		fmt.Println("  [q] Quit")
@@ -48,39 +49,45 @@ func main() {
 			return
 		}
 		if line == "0" {
-			var failed int
-			for _, s := range suites {
-				fmt.Printf("\n▶ %s\n", s.Name)
-				if err := s.Run(); err != nil {
-					fmt.Printf("❌ %s: %v\n", s.Name, err)
-					failed++
-				} else {
-					fmt.Printf("✅ %s: all PASS\n", s.Name)
+			_ = withSuiteLog(func() error {
+				var failed int
+				for _, s := range allSuites {
+					fmt.Printf("\n▶ %s\n", s.Name)
+					if err := s.Run(); err != nil {
+						fmt.Printf("❌ %s: %v\n", s.Name, err)
+						failed++
+					} else {
+						fmt.Printf("✅ %s: all PASS\n", s.Name)
+					}
 				}
-			}
-			if failed > 0 {
-				fmt.Printf("\n%d suite(s) failed\n", failed)
-			} else {
+				if failed > 0 {
+					fmt.Printf("\n%d suite(s) failed\n", failed)
+					return fmt.Errorf("%d suite(s) failed", failed)
+				}
 				fmt.Println("\nAll suites PASS")
-			}
+				return nil
+			})
 			continue
 		}
 		n, err := strconv.Atoi(line)
-		if err != nil || n < 1 || n > len(suites) {
+		if err != nil || n < 1 || n > len(allSuites) {
 			fmt.Println("Invalid choice")
 			continue
 		}
-		s := suites[n-1]
+		s := allSuites[n-1]
 		if s.Menu != nil {
 			s.Menu()
 			continue
 		}
 		fmt.Printf("\n▶ %s\n", s.Name)
-		if err := s.Run(); err != nil {
-			fmt.Printf("❌ %v\n", err)
-		} else {
+		_ = withSuiteLog(func() error {
+			if err := s.Run(); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
 			fmt.Printf("✅ %s: all PASS\n", s.Name)
-		}
+			return nil
+		})
 	}
 }
 
@@ -107,11 +114,14 @@ func denseSubmenu() {
 		}
 		if line == "0" {
 			fmt.Println()
-			if err := denssuite.RunAll(); err != nil {
-				fmt.Printf("❌ %v\n", err)
-			} else {
+			_ = withSuiteLog(func() error {
+				if err := denssuite.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
 				fmt.Println("✅ Dense: all PASS")
-			}
+				return nil
+			})
 			continue
 		}
 		n, err := strconv.Atoi(line)
@@ -120,10 +130,30 @@ func denseSubmenu() {
 			continue
 		}
 		fmt.Println()
-		if err := denssuite.RunOne(n); err != nil {
-			fmt.Printf("❌ %v\n", err)
-		}
+		_ = withSuiteLog(func() error {
+			if err := denssuite.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
 	}
+}
+
+// withSuiteLog clears w2a/logs/ to a single suite.txt, tees stdout, prints the
+// grand cell count + by-layer / by-op tables when done. Same path for Dense
+// alone or "run ALL layers" later.
+func withSuiteLog(fn func() error) error {
+	restore, err := suites.BeginLog()
+	if err != nil {
+		fmt.Printf("suite log: %v\n", err)
+		return err
+	}
+	defer func() {
+		suites.PrintReport()
+		restore()
+	}()
+	return fn()
 }
 
 func readLine(in *bufio.Reader) (string, error) {

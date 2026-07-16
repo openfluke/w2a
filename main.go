@@ -10,6 +10,7 @@ import (
 	"github.com/openfluke/w2a/suites"
 	denssuite "github.com/openfluke/w2a/suites/dense"
 	mhasuite "github.com/openfluke/w2a/suites/mha"
+	swigsuite "github.com/openfluke/w2a/suites/swiglu"
 )
 
 type suite struct {
@@ -33,7 +34,13 @@ func main() {
 			Run:  mhasuite.RunAll,
 			Menu: mhaSubmenu,
 		},
-		// Add more suites here as layers land (SwiGLU, RMSNorm, …).
+		{
+			Name: "SwiGLU",
+			Desc: "SiLU-gated FFN; FormatNone×34 + quants × backends + train grids",
+			Run:  swigsuite.RunAll,
+			Menu: swigluSubmenu,
+		},
+		// Add more suites here as layers land (RMSNorm, Embedding, …).
 	}
 
 	in := bufio.NewReader(os.Stdin)
@@ -188,6 +195,55 @@ func mhaSubmenu() {
 		fmt.Println()
 		_ = withSuiteLog(func() error {
 			if err := mhasuite.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
+	}
+}
+
+func swigluSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := swigsuite.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("SwiGLU suite")
+		fmt.Println("  [0] Run ALL SwiGLU cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := swigsuite.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ SwiGLU: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := swigsuite.RunOne(n); err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return err
 			}

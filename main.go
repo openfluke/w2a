@@ -1,0 +1,135 @@
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+
+	denssuite "github.com/openfluke/w2a/suites/dense"
+)
+
+type suite struct {
+	Name string
+	Desc string
+	Run  func() error
+	Menu func() // optional sub-menu (e.g. pick individual cases)
+}
+
+func main() {
+	suites := []suite{
+		{
+			Name: "Dense",
+			Desc: "34 dtypes, timed matrix, gap census (see welvet README)",
+			Run:  denssuite.RunAll,
+			Menu: denseSubmenu,
+		},
+		// Add more suites here as layers land (MHA, SwiGLU, …).
+	}
+
+	in := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Println()
+		fmt.Println("w2a — Welvet test harness")
+		fmt.Println("  [0] Run ALL suites")
+		for i, s := range suites {
+			fmt.Printf("  [%d] %s — %s\n", i+1, s.Name, s.Desc)
+		}
+		fmt.Println("  [q] Quit")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "q" || line == "Q" || line == "quit" {
+			return
+		}
+		if line == "0" {
+			var failed int
+			for _, s := range suites {
+				fmt.Printf("\n▶ %s\n", s.Name)
+				if err := s.Run(); err != nil {
+					fmt.Printf("❌ %s: %v\n", s.Name, err)
+					failed++
+				} else {
+					fmt.Printf("✅ %s: all PASS\n", s.Name)
+				}
+			}
+			if failed > 0 {
+				fmt.Printf("\n%d suite(s) failed\n", failed)
+			} else {
+				fmt.Println("\nAll suites PASS")
+			}
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(suites) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		s := suites[n-1]
+		if s.Menu != nil {
+			s.Menu()
+			continue
+		}
+		fmt.Printf("\n▶ %s\n", s.Name)
+		if err := s.Run(); err != nil {
+			fmt.Printf("❌ %v\n", err)
+		} else {
+			fmt.Printf("✅ %s: all PASS\n", s.Name)
+		}
+	}
+}
+
+func denseSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := denssuite.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("Dense suite")
+		fmt.Println("  [0] Run ALL dense cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			if err := denssuite.RunAll(); err != nil {
+				fmt.Printf("❌ %v\n", err)
+			} else {
+				fmt.Println("✅ Dense: all PASS")
+			}
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		if err := denssuite.RunOne(n); err != nil {
+			fmt.Printf("❌ %v\n", err)
+		}
+	}
+}
+
+func readLine(in *bufio.Reader) (string, error) {
+	line, err := in.ReadString('\n')
+	if err != nil && len(strings.TrimSpace(line)) == 0 {
+		return "", err
+	}
+	return strings.TrimRight(line, "\r\n"), nil
+}

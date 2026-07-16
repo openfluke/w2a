@@ -19,6 +19,7 @@ import (
 	embeddingsuite "github.com/openfluke/w2a/suites/embedding"
 	softmaxsuite "github.com/openfluke/w2a/suites/softmax"
 	sequentialsuite "github.com/openfluke/w2a/suites/sequential"
+	residualsuite "github.com/openfluke/w2a/suites/residual"
 	rmsnsuite "github.com/openfluke/w2a/suites/rmsnorm"
 	swigsuite "github.com/openfluke/w2a/suites/swiglu"
 )
@@ -110,7 +111,13 @@ func main() {
 			Run:  sequentialsuite.RunAll,
 			Menu: sequentialSubmenu,
 		},
-		// Add more suites here as layers land (residual, parallel, …).
+		{
+			Name: "Residual",
+			Desc: "y=F(x)+x Dense F; FormatNone×34 + quants × backends + train grids",
+			Run:  residualsuite.RunAll,
+			Menu: residualSubmenu,
+		},
+		// Add more suites here as layers land (parallel, …).
 	}
 
 	in := bufio.NewReader(os.Stdin)
@@ -804,6 +811,55 @@ func sequentialSubmenu() {
 		fmt.Println()
 		_ = withSuiteLog(func() error {
 			if err := sequentialsuite.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
+	}
+}
+
+func residualSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := residualsuite.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("Residual suite")
+		fmt.Println("  [0] Run ALL Residual cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := residualsuite.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ Residual: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := residualsuite.RunOne(n); err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return err
 			}

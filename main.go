@@ -17,6 +17,7 @@ import (
 	rnnsuite "github.com/openfluke/w2a/suites/rnn"
 	lstmsuite "github.com/openfluke/w2a/suites/lstm"
 	embeddingsuite "github.com/openfluke/w2a/suites/embedding"
+	softmaxsuite "github.com/openfluke/w2a/suites/softmax"
 	rmsnsuite "github.com/openfluke/w2a/suites/rmsnorm"
 	swigsuite "github.com/openfluke/w2a/suites/swiglu"
 )
@@ -95,6 +96,12 @@ func main() {
 			Desc: "token gather/scatter; FormatNone×34 + quants × backends + train grids",
 			Run:  embeddingsuite.RunAll,
 			Menu: embeddingSubmenu,
+		},
+		{
+			Name: "Softmax",
+			Desc: "weightless last-axis Softmax; ALU × backends + train grids",
+			Run:  softmaxsuite.RunAll,
+			Menu: softmaxSubmenu,
 		},
 		// Add more suites here as layers land (residual, …).
 	}
@@ -692,6 +699,55 @@ func embeddingSubmenu() {
 		fmt.Println()
 		_ = withSuiteLog(func() error {
 			if err := embeddingsuite.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
+	}
+}
+
+func softmaxSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := softmaxsuite.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("Softmax suite")
+		fmt.Println("  [0] Run ALL Softmax cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := softmaxsuite.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ Softmax: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := softmaxsuite.RunOne(n); err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return err
 			}

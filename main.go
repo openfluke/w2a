@@ -9,6 +9,7 @@ import (
 
 	"github.com/openfluke/w2a/suites"
 	denssuite "github.com/openfluke/w2a/suites/dense"
+	mhasuite "github.com/openfluke/w2a/suites/mha"
 )
 
 type suite struct {
@@ -26,7 +27,13 @@ func main() {
 			Run:  denssuite.RunAll,
 			Menu: denseSubmenu,
 		},
-		// Add more suites here as layers land (MHA, SwiGLU, …).
+		{
+			Name: "MHA",
+			Desc: "causal+RoPE+GQA; FormatNone×34 + quants × backends + train grids",
+			Run:  mhasuite.RunAll,
+			Menu: mhaSubmenu,
+		},
+		// Add more suites here as layers land (SwiGLU, RMSNorm, …).
 	}
 
 	in := bufio.NewReader(os.Stdin)
@@ -132,6 +139,55 @@ func denseSubmenu() {
 		fmt.Println()
 		_ = withSuiteLog(func() error {
 			if err := denssuite.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
+	}
+}
+
+func mhaSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := mhasuite.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("MHA suite")
+		fmt.Println("  [0] Run ALL MHA cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := mhasuite.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ MHA: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := mhasuite.RunOne(n); err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return err
 			}

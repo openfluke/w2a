@@ -9,7 +9,7 @@ import (
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/forward"
 	"github.com/openfluke/welvet/quant"
-	"github.com/openfluke/welvet/rmsnorm"
+	"github.com/openfluke/welvet/layers/rmsnorm"
 	"github.com/openfluke/welvet/simd"
 	"github.com/openfluke/welvet/training"
 	"github.com/openfluke/welvet/webgpu"

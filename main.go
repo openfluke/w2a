@@ -9,6 +9,7 @@ import (
 
 	"github.com/openfluke/w2a/suites"
 	denssuite "github.com/openfluke/w2a/suites/dense"
+	dnasuite "github.com/openfluke/w2a/suites/dna"
 	mhasuite "github.com/openfluke/w2a/suites/mha"
 	lnsuite "github.com/openfluke/w2a/suites/layernorm"
 	cnn1suite "github.com/openfluke/w2a/suites/cnn1"
@@ -17,11 +18,13 @@ import (
 	rnnsuite "github.com/openfluke/w2a/suites/rnn"
 	lstmsuite "github.com/openfluke/w2a/suites/lstm"
 	embeddingsuite "github.com/openfluke/w2a/suites/embedding"
+	evosuite "github.com/openfluke/w2a/suites/evolution"
 	softmaxsuite "github.com/openfluke/w2a/suites/softmax"
 	sequentialsuite "github.com/openfluke/w2a/suites/sequential"
 	residualsuite "github.com/openfluke/w2a/suites/residual"
 	rmsnsuite "github.com/openfluke/w2a/suites/rmsnorm"
 	swigsuite "github.com/openfluke/w2a/suites/swiglu"
+	tweensuite "github.com/openfluke/w2a/suites/tween"
 )
 
 type suite struct {
@@ -116,6 +119,24 @@ func main() {
 			Desc: "y=F(x)+x Dense F; FormatNone×34 + quants × backends + train grids",
 			Run:  residualsuite.RunAll,
 			Menu: residualSubmenu,
+		},
+		{
+			Name: "DNA",
+			Desc: "topology fingerprints — all Ops × FormatNone×34 + all quants + drift/census",
+			Run:  dnasuite.RunAll,
+			Menu: dnaSubmenu,
+		},
+		{
+			Name: "Evolution",
+			Desc: "splice + NEAT — clone all Ops; Dense dtype×quant; multi-layer quant splice",
+			Run:  evosuite.RunAll,
+			Menu: evolutionSubmenu,
+		},
+		{
+			Name: "Tween",
+			Desc: "target prop — Dense dtype×quant StepTween; multi-layer chain/layerwise",
+			Run:  tweensuite.RunAll,
+			Menu: tweenSubmenu,
 		},
 		// Add more suites here as layers land (parallel, …).
 	}
@@ -860,6 +881,153 @@ func residualSubmenu() {
 		fmt.Println()
 		_ = withSuiteLog(func() error {
 			if err := residualsuite.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
+	}
+}
+
+func dnaSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := dnasuite.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("DNA suite")
+		fmt.Println("  [0] Run ALL DNA cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := dnasuite.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ DNA: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := dnasuite.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
+	}
+}
+
+func evolutionSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := evosuite.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("Evolution suite")
+		fmt.Println("  [0] Run ALL Evolution cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := evosuite.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ Evolution: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := evosuite.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
+	}
+}
+
+func tweenSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := tweensuite.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("Tween suite")
+		fmt.Println("  [0] Run ALL Tween cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := tweensuite.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ Tween: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := tweensuite.RunOne(n); err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return err
 			}

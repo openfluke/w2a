@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/openfluke/welvet/architecture"
-	"github.com/openfluke/welvet/cnn2"
+	"github.com/openfluke/welvet/layers/cnn2"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/forward"
 	"github.com/openfluke/welvet/quant"

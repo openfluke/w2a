@@ -8,7 +8,7 @@ import (
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/simd"
-	"github.com/openfluke/welvet/swiglu"
+	"github.com/openfluke/welvet/layers/swiglu"
 	"github.com/openfluke/welvet/webgpu"
 )
 

@@ -1,6 +1,6 @@
 module github.com/openfluke/w2a
 
-go 1.22
+go 1.22.5
 
 require github.com/openfluke/welvet v0.0.0
 

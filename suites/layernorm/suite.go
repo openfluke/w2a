@@ -9,7 +9,7 @@ import (
 	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/quant"
-	"github.com/openfluke/welvet/layernorm"
+	"github.com/openfluke/welvet/layers/layernorm"
 	"github.com/openfluke/welvet/simd"
 	"github.com/openfluke/welvet/webgpu"
 )

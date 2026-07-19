@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/openfluke/w2a/suites"
-	"github.com/openfluke/welvet/cnn1"
+	"github.com/openfluke/welvet/layers/cnn1"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/simd"

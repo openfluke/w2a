@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openfluke/welvet/cnn3"
+	"github.com/openfluke/welvet/layers/cnn3"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/simd"

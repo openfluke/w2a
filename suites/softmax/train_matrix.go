@@ -10,7 +10,7 @@ import (
 	"github.com/openfluke/welvet/forward"
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/simd"
-	"github.com/openfluke/welvet/softmax"
+	"github.com/openfluke/welvet/layers/softmax"
 	"github.com/openfluke/welvet/training"
 	"github.com/openfluke/welvet/webgpu"
 )

@@ -1,6 +1,6 @@
 # Dense — w2a validation notes
 
-Engine: `github.com/openfluke/welvet/dense`  
+Engine: `github.com/openfluke/welvet/layers/dense`  
 Policy: see welvet README (no engine tests, no fallbacks, nothing hardcoded to float32 — `Forward[T]`/`Backward[T]`, v1 checklist).
 
 DType matrix: **34** types (0–33). Suite includes CPU FormatNone smoke for all 34 and a **TIMED matrix** (fwd/bwd ns/op × CPU/SIMD/WebGPU).

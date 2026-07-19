@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/openfluke/welvet/core"
-	"github.com/openfluke/welvet/embedding"
+	"github.com/openfluke/welvet/layers/embedding"
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/simd"
 	"github.com/openfluke/welvet/webgpu"

@@ -122,19 +122,19 @@ func main() {
 		},
 		{
 			Name: "DNA",
-			Desc: "topology fingerprints — all Ops × FormatNone×34 + all quants + drift/census",
+			Desc: "all layers × FormatNone×34 + all quants×f32 + FULL layer×dtype×quant census",
 			Run:  dnasuite.RunAll,
 			Menu: dnaSubmenu,
 		},
 		{
 			Name: "Evolution",
-			Desc: "splice + NEAT — clone all Ops; Dense dtype×quant; multi-layer quant splice",
+			Desc: "clone+splice all layers × dtypes + quants + FULL layer×dtype×quant census",
 			Run:  evosuite.RunAll,
 			Menu: evolutionSubmenu,
 		},
 		{
 			Name: "Tween",
-			Desc: "target prop — Dense dtype×quant StepTween; multi-layer chain/layerwise",
+			Desc: "StepTween all layers × dtypes + quants + FULL layer×dtype×quant census",
 			Run:  tweensuite.RunAll,
 			Menu: tweenSubmenu,
 		},

@@ -32,11 +32,11 @@ type Case struct {
 func Cases() []Case {
 	return []Case{
 		{Name: "Splice blend smoke (Dense)", Run: spliceBlendSmoke},
-		{Name: "Clone all implemented Ops (FormatNone Float32)", Run: cloneAllOps},
-		{Name: "Splice FormatNone × all 34 dtypes (Dense)", Run: spliceAllDTypes},
-		{Name: "Splice all quants × Float32 (Dense)", Run: spliceAllQuants},
 		{Name: "NEAT mutate + population one-gen smoke", Run: neatPopulationSmoke},
 		{Name: "Multi-layer clone+splice (Dense/RMS/SwiGLU + quant)", Run: multiLayerCloneSplice},
+		{Name: "MATRIX — FormatNone × all 34 dtypes × all layers (clone+splice)", Run: MatrixFormatNoneAllDTypes},
+		{Name: "MATRIX — all quants × Float32 × all layers (clone+splice)", Run: MatrixAllQuantsFloat32},
+		{Name: "FULL CENSUS — all layers × all dtypes × all quants", Run: FullMatrixCensus},
 	}
 }
 

@@ -31,11 +31,11 @@ type Case struct {
 func Cases() []Case {
 	return []Case{
 		{Name: "Extract+compare immutable smoke (Dense)", Run: extractImmutableSmoke},
-		{Name: "Self-compare FormatNone × all 34 dtypes (Dense)", Run: formatNoneAllDTypes},
-		{Name: "Self-compare all quants × Float32 (Dense)", Run: allQuantsFloat32},
-		{Name: "Multi-layer Ops DNA (Dense/RMS/SwiGLU/MHA/…)", Run: multiLayerOps},
 		{Name: "Detect weight drift (cosine < 1 after mutate)", Run: detectDrift},
-		{Name: "GAP CENSUS — layer-kind × FormatNone Float32", Run: layerKindCensus},
+		{Name: "Multi-layer Ops DNA (Dense/RMS/SwiGLU/MHA/…)", Run: multiLayerOps},
+		{Name: "MATRIX — FormatNone × all 34 dtypes × all layers", Run: MatrixFormatNoneAllDTypes},
+		{Name: "MATRIX — all quants × Float32 × all layers", Run: MatrixAllQuantsFloat32},
+		{Name: "FULL CENSUS — all layers × all dtypes × all quants", Run: FullMatrixCensus},
 	}
 }
 

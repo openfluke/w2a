@@ -25,11 +25,11 @@ type Case struct {
 func Cases() []Case {
 	return []Case{
 		{Name: "Dense StepTween gap reduce smoke", Run: denseGapReduce},
-		{Name: "FormatNone × all 34 dtypes StepTween (Dense)", Run: formatNoneAllDTypes},
-		{Name: "All quants × Float32 StepTween (Dense)", Run: allQuantsFloat32},
 		{Name: "Multi-layer chain-rule + layerwise (Dense+RMSNorm)", Run: multiLayerModes},
 		{Name: "SwiGLU layerwise gaps smoke", Run: swigluLayerwise},
-		{Name: "GAP CENSUS — dtype×quant StepTween cells", Run: census},
+		{Name: "MATRIX — FormatNone × all 34 dtypes × all layers", Run: MatrixFormatNoneAllDTypes},
+		{Name: "MATRIX — all quants × Float32 × all layers", Run: MatrixAllQuantsFloat32},
+		{Name: "FULL CENSUS — all layers × all dtypes × all quants", Run: FullMatrixCensus},
 	}
 }
 

@@ -27,9 +27,13 @@ func Cases() []Case {
 		{Name: "Dense StepTween gap reduce smoke", Run: denseGapReduce},
 		{Name: "Multi-layer chain-rule + layerwise (Dense+RMSNorm)", Run: multiLayerModes},
 		{Name: "SwiGLU layerwise gaps smoke", Run: swigluLayerwise},
-		{Name: "MATRIX — FormatNone × all 34 dtypes × all layers", Run: MatrixFormatNoneAllDTypes},
-		{Name: "MATRIX — all quants × Float32 × all layers", Run: MatrixAllQuantsFloat32},
-		{Name: "FULL CENSUS — all layers × all dtypes × all quants", Run: FullMatrixCensus},
+		{Name: "SIMD smoke — BackendSIMD DotTile chain-rule (Dense/SwiGLU/MHA/RMS)", Run: MatrixSIMDSmoke},
+		{Name: "TIMED — Dense FormatNone × 34 dtypes · CPU vs SIMD (ns + speedup)", Run: TimedDenseFormatNone},
+		{Name: "TIMED — Dense all quants × Float32 · CPU vs SIMD (ns + speedup)", Run: TimedDenseQuants},
+		{Name: "TIMED — all layers FormatNone Float32 · CPU vs SIMD (ns + speedup)", Run: TimedLayersCPUVsSIMD},
+		{Name: "MATRIX — FormatNone × all 34 dtypes × all layers × CPU/SIMD", Run: MatrixFormatNoneAllDTypes},
+		{Name: "MATRIX — all quants × Float32 × all layers × CPU/SIMD", Run: MatrixAllQuantsFloat32},
+		{Name: "FULL CENSUS — all layers × all dtypes × all quants × CPU/SIMD", Run: FullMatrixCensus},
 	}
 }
 

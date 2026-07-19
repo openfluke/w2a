@@ -134,7 +134,7 @@ func main() {
 		},
 		{
 			Name: "Tween",
-			Desc: "StepTween all layers × dtypes + quants + FULL layer×dtype×quant census",
+			Desc: "StepTween SIMD DotTile — timed CPU vs SIMD + full layer×dtype×quant×backend census",
 			Run:  tweensuite.RunAll,
 			Menu: tweenSubmenu,
 		},

@@ -15,10 +15,18 @@ import (
 	cnn1suite "github.com/openfluke/w2a/suites/cnn1"
 	cnn2suite "github.com/openfluke/w2a/suites/cnn2"
 	cnn3suite "github.com/openfluke/w2a/suites/cnn3"
+	convt1suite "github.com/openfluke/w2a/suites/convt1"
+	convt2suite "github.com/openfluke/w2a/suites/convt2"
+	convt3suite "github.com/openfluke/w2a/suites/convt3"
 	rnnsuite "github.com/openfluke/w2a/suites/rnn"
 	lstmsuite "github.com/openfluke/w2a/suites/lstm"
 	embeddingsuite "github.com/openfluke/w2a/suites/embedding"
 	evosuite "github.com/openfluke/w2a/suites/evolution"
+	gdnsuite "github.com/openfluke/w2a/suites/gdn"
+	kmeanssuite "github.com/openfluke/w2a/suites/kmeans"
+	mambasuite "github.com/openfluke/w2a/suites/mamba"
+	metasuite "github.com/openfluke/w2a/suites/metacognition"
+	parallelsuite "github.com/openfluke/w2a/suites/parallel"
 	softmaxsuite "github.com/openfluke/w2a/suites/softmax"
 	sequentialsuite "github.com/openfluke/w2a/suites/sequential"
 	residualsuite "github.com/openfluke/w2a/suites/residual"
@@ -120,6 +128,46 @@ func main() {
 			Desc: "y=F(x)+x Dense F; FormatNone×34 + quants × backends + train grids",
 			Run:  residualsuite.RunAll,
 			Menu: residualSubmenu,
+		},
+		{
+			Name: "ConvT1",
+			Desc: "ConvTranspose1d scatter; FormatNone×34 + SIMD + gap census",
+			Run:  convt1suite.RunAll,
+		},
+		{
+			Name: "ConvT2",
+			Desc: "ConvTranspose2d scatter; FormatNone×34 + SIMD + gap census",
+			Run:  convt2suite.RunAll,
+		},
+		{
+			Name: "ConvT3",
+			Desc: "ConvTranspose3d scatter; FormatNone×34 + SIMD + gap census",
+			Run:  convt3suite.RunAll,
+		},
+		{
+			Name: "Parallel",
+			Desc: "MoE-style Parallel concat/add/avg/filter; FormatNone×34 + SIMD",
+			Run:  parallelsuite.RunAll,
+		},
+		{
+			Name: "KMeans",
+			Desc: "soft K-Means centers; FormatNone×34 + SIMD + gap census",
+			Run:  kmeanssuite.RunAll,
+		},
+		{
+			Name: "Mamba",
+			Desc: "selective SSM (seqmix.KindSSM); FormatNone×34 + SIMD",
+			Run:  mambasuite.RunAll,
+		},
+		{
+			Name: "Metacognition",
+			Desc: "heuristic wrapper (no QAT morph); FormatNone×34 + SIMD",
+			Run:  metasuite.RunAll,
+		},
+		{
+			Name: "GDN",
+			Desc: "Gated DeltaNet decode + seq Forward (inference-first)",
+			Run:  gdnsuite.RunAll,
 		},
 		{
 			Name: "DNA",

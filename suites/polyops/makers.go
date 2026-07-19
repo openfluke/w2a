@@ -9,11 +9,18 @@ import (
 	"github.com/openfluke/welvet/layers/cnn1"
 	"github.com/openfluke/welvet/layers/cnn2"
 	"github.com/openfluke/welvet/layers/cnn3"
+	"github.com/openfluke/welvet/layers/convt1"
+	"github.com/openfluke/welvet/layers/convt2"
+	"github.com/openfluke/welvet/layers/convt3"
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/layers/embedding"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/layernorm"
 	"github.com/openfluke/welvet/layers/lstm"
+	"github.com/openfluke/welvet/layers/mamba"
+	"github.com/openfluke/welvet/layers/metacognition"
 	"github.com/openfluke/welvet/layers/mha"
+	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/layers/residual"
 	"github.com/openfluke/welvet/layers/rmsnorm"
 	"github.com/openfluke/welvet/layers/rnn"
@@ -221,6 +228,93 @@ func AllKinds() []Kind {
 			},
 			InputShape:  []int{1, 2, dim},
 			TargetShape: []int{1, 2, dim},
+		},
+		{
+			Name: "convt1",
+			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
+				cfg := convt1.Config{InChannels: 2, Filters: 2, SeqLen: 4, Kernel: 3, Stride: 1, Padding: 1, Activation: core.ActivationLinear}
+				l, err := convt1.NewConfigured[float32](cfg, dt, format, nil)
+				if err != nil {
+					return nil, err
+				}
+				return bind(l.Core, l)
+			},
+			InputShape:  []int{1, 2, 4},
+			TargetShape: []int{1, 2, 4},
+		},
+		{
+			Name: "convt2",
+			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
+				cfg := convt2.Config{InChannels: 1, Filters: 1, Height: 4, Width: 4, Kernel: 3, Padding: 1, Activation: core.ActivationLinear}
+				l, err := convt2.NewConfigured[float32](cfg, dt, format, nil)
+				if err != nil {
+					return nil, err
+				}
+				return bind(l.Core, l)
+			},
+			InputShape:  []int{1, 1, 4, 4},
+			TargetShape: []int{1, 1, 4, 4},
+		},
+		{
+			Name: "convt3",
+			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
+				cfg := convt3.Config{InChannels: 1, Filters: 1, Depth: 3, Height: 3, Width: 3, Kernel: 3, Padding: 1, Activation: core.ActivationLinear}
+				l, err := convt3.NewConfigured[float32](cfg, dt, format, nil)
+				if err != nil {
+					return nil, err
+				}
+				return bind(l.Core, l)
+			},
+			InputShape:  []int{1, 1, 3, 3, 3},
+			TargetShape: []int{1, 1, 3, 3, 3},
+		},
+		{
+			Name: "parallel",
+			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
+				l, err := parallel.NewConfigured[float32](parallel.Config{Dim: dim, OutFeat: dim, Branches: 2, Combine: parallel.CombineAdd}, dt, format, nil, nil)
+				if err != nil {
+					return nil, err
+				}
+				return bind(l.Core, l)
+			},
+			InputShape:  []int{1, dim},
+			TargetShape: []int{1, dim},
+		},
+		{
+			Name: "kmeans",
+			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
+				l, err := kmeans.NewConfigured[float32](kmeans.Config{NumClusters: 4, FeatureDim: dim, OutputMode: kmeans.OutputProbabilities}, dt, format, nil)
+				if err != nil {
+					return nil, err
+				}
+				return bind(l.Core, l)
+			},
+			InputShape:  []int{1, dim},
+			TargetShape: []int{1, 4},
+		},
+		{
+			Name: "mamba",
+			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
+				l, err := mamba.NewConfigured[float32](mamba.Config{DModel: dim, DState: 4, Expand: 2, SeqLen: 4}, dt, format, nil, nil, nil, nil)
+				if err != nil {
+					return nil, err
+				}
+				return bind(l.Core, l)
+			},
+			InputShape:  []int{1, 4, dim},
+			TargetShape: []int{1, 4, dim},
+		},
+		{
+			Name: "metacognition",
+			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
+				l, err := metacognition.NewConfigured[float32](metacognition.Config{Dim: dim}, dt, format, nil)
+				if err != nil {
+					return nil, err
+				}
+				return bind(l.Core, l)
+			},
+			InputShape:  []int{1, dim},
+			TargetShape: []int{1, dim},
 		},
 	}
 }

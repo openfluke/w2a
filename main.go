@@ -24,6 +24,7 @@ import (
 	residualsuite "github.com/openfluke/w2a/suites/residual"
 	rmsnsuite "github.com/openfluke/w2a/suites/rmsnorm"
 	swigsuite "github.com/openfluke/w2a/suites/swiglu"
+	stepsuite "github.com/openfluke/w2a/suites/step"
 	tweensuite "github.com/openfluke/w2a/suites/tween"
 )
 
@@ -137,6 +138,12 @@ func main() {
 			Desc: "StepTween SIMD DotTile — timed CPU vs SIMD + full layer×dtype×quant×backend census",
 			Run:  tweensuite.RunAll,
 			Menu: tweenSubmenu,
+		},
+		{
+			Name: "Step",
+			Desc: "volumetric step mesh — Forward/Backward/ApplyTween × layers×dtypes×quants×CPU/SIMD",
+			Run:  stepsuite.RunAll,
+			Menu: stepSubmenu,
 		},
 		// Add more suites here as layers land (parallel, …).
 	}
@@ -1028,6 +1035,55 @@ func tweenSubmenu() {
 		fmt.Println()
 		_ = withSuiteLog(func() error {
 			if err := tweensuite.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
+	}
+}
+
+func stepSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := stepsuite.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("Step suite")
+		fmt.Println("  [0] Run ALL Step cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := stepsuite.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ Step: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := stepsuite.RunOne(n); err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return err
 			}

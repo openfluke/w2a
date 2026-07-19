@@ -5,11 +5,11 @@ import (
 
 	"github.com/openfluke/welvet/architecture"
 	"github.com/openfluke/welvet/core"
-	"github.com/openfluke/welvet/forward"
+	"github.com/openfluke/welvet/runtime/forward"
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/layers/rmsnorm"
-	"github.com/openfluke/welvet/training"
-	"github.com/openfluke/welvet/tween"
+	"github.com/openfluke/welvet/runtime/training"
+	"github.com/openfluke/welvet/systems/tween"
 )
 
 func TestTweenMultiLayerChainRule(t *testing.T) {

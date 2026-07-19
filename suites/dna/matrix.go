@@ -6,7 +6,7 @@ import (
 
 	"github.com/openfluke/w2a/suites/polyops"
 	"github.com/openfluke/welvet/core"
-	"github.com/openfluke/welvet/dna"
+	"github.com/openfluke/welvet/systems/dna"
 	"github.com/openfluke/welvet/quant"
 )
 

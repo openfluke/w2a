@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/openfluke/welvet/transformer"
+	"github.com/openfluke/welvet/model/transformer"
 )
 
 // Qwen3 / Lucy use rotate_half (pair d with d+half), not adjacent NeoX pairs.

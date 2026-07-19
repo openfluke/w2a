@@ -9,8 +9,8 @@ import (
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/quant"
-	"github.com/openfluke/welvet/step"
-	"github.com/openfluke/welvet/training"
+	"github.com/openfluke/welvet/runtime/step"
+	"github.com/openfluke/welvet/runtime/training"
 )
 
 func TestStepSuite(t *testing.T) {

@@ -7,11 +7,11 @@ import (
 
 	"github.com/openfluke/welvet/architecture"
 	"github.com/openfluke/welvet/core"
-	"github.com/openfluke/welvet/forward"
+	"github.com/openfluke/welvet/runtime/forward"
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/layers/residual"
 	"github.com/openfluke/welvet/simd"
-	"github.com/openfluke/welvet/training"
+	"github.com/openfluke/welvet/runtime/training"
 	"github.com/openfluke/welvet/webgpu"
 )
 

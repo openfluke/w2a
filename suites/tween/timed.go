@@ -12,7 +12,7 @@ import (
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/simd"
-	"github.com/openfluke/welvet/training"
+	"github.com/openfluke/welvet/runtime/training"
 )
 
 const (

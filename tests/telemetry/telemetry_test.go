@@ -6,7 +6,7 @@ import (
 	"github.com/openfluke/welvet/architecture"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/dense"
-	"github.com/openfluke/welvet/telemetry"
+	"github.com/openfluke/welvet/systems/telemetry"
 )
 
 func TestBlueprintDenseParams(t *testing.T) {

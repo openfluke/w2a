@@ -7,7 +7,7 @@ import (
 	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/architecture"
 	"github.com/openfluke/welvet/core"
-	"github.com/openfluke/welvet/dna"
+	"github.com/openfluke/welvet/systems/dna"
 	"github.com/openfluke/welvet/layers/cnn1"
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/layers/embedding"

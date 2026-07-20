@@ -34,6 +34,12 @@ import (
 	swigsuite "github.com/openfluke/w2a/suites/swiglu"
 	stepsuite "github.com/openfluke/w2a/suites/step"
 	tweensuite "github.com/openfluke/w2a/suites/tween"
+	donatesuite "github.com/openfluke/w2a/suites/donate"
+	fountainsuite "github.com/openfluke/w2a/suites/fountain"
+	hardwaresuite "github.com/openfluke/w2a/suites/hardware"
+	memorysuite "github.com/openfluke/w2a/suites/memory"
+	seedsuite "github.com/openfluke/w2a/suites/seed"
+	serializationsuite "github.com/openfluke/w2a/suites/serialization"
 )
 
 type suite struct {
@@ -193,7 +199,37 @@ func main() {
 			Run:  stepsuite.RunAll,
 			Menu: stepSubmenu,
 		},
-		// Add more suites here as layers land (parallel, …).
+		{
+			Name: "Seed",
+			Desc: "SeedFrom/He/dense+infinite manifests/invert (bit-compatible with loom)",
+			Run:  seedsuite.RunAll,
+		},
+		{
+			Name: "Fountain",
+			Desc: "Luby Transform peel + RecoverWeightBlobs lossy channel",
+			Run:  fountainsuite.RunAll,
+		},
+		{
+			Name: "Donate",
+			Desc: "networked compute offload TCP protocol (model_push stub workers)",
+			Run:  donatesuite.RunAll,
+		},
+		{
+			Name: "Hardware",
+			Desc: "SystemAudit OS/CPU/RAM/GPU/disk/network probes",
+			Run:  hardwaresuite.RunAll,
+		},
+		{
+			Name: "Memory",
+			Desc: "footprint / history / ReleaseTransient (WELVET_MEMORY_HISTORY)",
+			Run:  memorysuite.RunAll,
+		},
+		{
+			Name: "Serialization",
+			Desc: "JSON+ENTITY all Ops; native dtype×quant storage truth (no QAT)",
+			Run:  serializationsuite.RunAll,
+		},
+		// Accel remains stub (NPU/QNN/Metal plugins).
 	}
 
 	in := bufio.NewReader(os.Stdin)

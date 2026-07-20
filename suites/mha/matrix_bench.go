@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/quant"
@@ -107,6 +108,12 @@ func timeCell(dt core.DType, format quant.Format, be core.Backend, cfg mha.Confi
 	if be == core.BackendWebGPU && !webgpu.Available() {
 		return 0, 0, "GAP", "no gpu"
 	}
+	// Q/K/V weights are [·×DModel]; O is [·×QDim()] — Pack() packs all four,
+	// so every projection's column count must be AffinePackable or Pack fails.
+	if format == quant.FormatAffinePacked &&
+		(!suites.AffinePackable(cfg.QDim(), cfg.DModel) || !suites.AffinePackable(cfg.DModel, cfg.QDim())) {
+		return 0, 0, "GAP", suites.AffineSkipNote()
+	}
 	l, err := newLayer(cfg, dt, format, be)
 	if err != nil {
 		return 0, 0, failOrGap(be), err.Error()
@@ -145,7 +152,8 @@ func timeCell(dt core.DType, format quant.Format, be core.Backend, cfg mha.Confi
 		}
 		bwdTotal += time.Since(t1)
 	}
-	return fwdTotal.Nanoseconds() / int64(iters), bwdTotal.Nanoseconds() / int64(iters), "OK", ""
+	st, nt := suites.StampWebGPUNote("mha", be == core.BackendWebGPU, "OK", "")
+	return fwdTotal.Nanoseconds() / int64(iters), bwdTotal.Nanoseconds() / int64(iters), st, nt
 }
 
 func failOrGap(be core.Backend) string {

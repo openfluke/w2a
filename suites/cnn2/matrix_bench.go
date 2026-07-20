@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/layers/cnn2"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/quant"
@@ -97,6 +98,9 @@ func timeCell(dt core.DType, format quant.Format, be core.Backend, cfg cnn2.Conf
 	if be == core.BackendWebGPU && !webgpu.Available() {
 		return 0, 0, "GAP", "no gpu"
 	}
+	if format == quant.FormatAffinePacked && !suites.AffinePackable(cfg.Filters, cfg.PatchDim()) {
+		return 0, 0, "GAP", suites.AffineSkipNote()
+	}
 	l, err := newLayer(cfg, dt, format, be)
 	if err != nil {
 		return 0, 0, failOrGap(be), err.Error()
@@ -133,5 +137,6 @@ func timeCell(dt core.DType, format quant.Format, be core.Backend, cfg cnn2.Conf
 		}
 		bwdTotal += time.Since(t1)
 	}
-	return fwdTotal.Nanoseconds() / int64(iters), bwdTotal.Nanoseconds() / int64(iters), "OK", ""
+	st, nt := suites.StampWebGPUNote("cnn2", be == core.BackendWebGPU, "OK", "")
+	return fwdTotal.Nanoseconds() / int64(iters), bwdTotal.Nanoseconds() / int64(iters), st, nt
 }

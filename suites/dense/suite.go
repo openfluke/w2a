@@ -497,6 +497,10 @@ func cpuTiledMatrix() error {
 	n := 0
 	for _, dt := range core.AllDTypes {
 		for _, f := range quant.AllFormats {
+			// smoke shape is out×in = 8×16 — AffinePacked needs cols%64==0.
+			if f == quant.FormatAffinePacked && !suites.AffinePackable(8, 16) {
+				continue
+			}
 			n++
 			if err := smoke[float32](dt, f, core.BackendCPUTiled); err != nil {
 				fails = append(fails, fmt.Sprintf("%s/%s: %v", dt, f, err))
@@ -540,10 +544,16 @@ func simdWebGPUAllQuants() error {
 		if f == quant.FormatNone {
 			continue
 		}
+		if f == quant.FormatAffinePacked && !suites.AffinePackable(8, 16) {
+			continue // smoke shape not packable — see backend_honesty.AffineSkipNote
+		}
 		for _, be := range backends {
 			if be == core.BackendSIMD && !simd.Enabled() {
 				fails = append(fails, fmt.Sprintf("%s/%s: SIMD not enabled", f, be))
 				continue
+			}
+			if be == core.BackendWebGPU && !webgpu.Available() {
+				continue // no device — GAP, not FAIL
 			}
 			if err := smoke[float32](core.DTypeFloat32, f, be); err != nil {
 				fails = append(fails, fmt.Sprintf("%s/%s: %v", f, be, err))
@@ -563,22 +573,35 @@ func fullMatrixGaps() error {
 	var failN int
 	var samples []string
 	for _, p := range perms {
-		var err error
-		if p.Backend == core.BackendWebGPU {
-			// forward-only for census speed (full fwd+bwd covered by timed + quant suites)
-			err = smokeForwardOnly[float32](p.DType, p.Format, p.Backend)
-		} else {
-			err = smoke[float32](p.DType, p.Format, p.Backend)
-		}
 		status := "OK"
 		note := ""
-		if err != nil {
+		// smoke / smokeForwardOnly use cols=16/32 — AffinePacked needs cols%64==0.
+		smokeCols := 16
+		if p.Backend == core.BackendWebGPU {
+			smokeCols = 32
+		}
+		if p.Format == quant.FormatAffinePacked && !suites.AffinePackable(8, smokeCols) {
 			failN++
 			status = "GAP"
-			note = err.Error()
-			if len(samples) < 6 {
-				samples = append(samples, fmt.Sprintf("%s/%s/%s", p.DType, p.Format, p.Backend))
+			note = suites.AffineSkipNote()
+		} else {
+			var err error
+			if p.Backend == core.BackendWebGPU {
+				// forward-only for census speed (full fwd+bwd covered by timed + quant suites)
+				err = smokeForwardOnly[float32](p.DType, p.Format, p.Backend)
+			} else {
+				err = smoke[float32](p.DType, p.Format, p.Backend)
 			}
+			if err != nil {
+				failN++
+				status = "GAP"
+				note = err.Error()
+			} else if p.Backend == core.BackendWebGPU {
+				status, note = suites.StampWebGPUNote("dense", true, status, note)
+			}
+		}
+		if status == "GAP" && len(samples) < 6 {
+			samples = append(samples, fmt.Sprintf("%s/%s/%s", p.DType, p.Format, p.Backend))
 		}
 		rec("census", p.DType.String(), p.Format.String(), p.Backend.String(), "-", status, note)
 	}

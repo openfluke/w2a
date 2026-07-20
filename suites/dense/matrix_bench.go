@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/quant"
@@ -154,7 +155,8 @@ func timeCell(dt core.DType, be core.Backend, batch, in, out, warm, iters int) (
 		}
 		return fwdNs, bwdNs, "GAP", "bwd: " + trimErr(err)
 	}
-	return fwdNs, bwdNs, "OK", ""
+	st, nt := suites.StampWebGPUNote("dense", be == core.BackendWebGPU, "OK", "")
+	return fwdNs, bwdNs, st, nt
 }
 
 // TimedQuantMatrix runs all quant.Formats × {CPU,SIMD,WebGPU} at Float32 with timings.
@@ -293,12 +295,13 @@ func timeQuantCell(f quant.Format, be core.Backend, batch, in, out, warm, iters 
 	note = ""
 	if f == quant.FormatQ4_0 && be == core.BackendSIMD {
 		note = "fused DotQ4_0 when aligned"
-  } else if f != quant.FormatNone && be != core.BackendCPUTiled {
+	} else if f != quant.FormatNone && be != core.BackendCPUTiled {
 		note = "quant→host wire (ggml f32 unpack→MAC)"
 	} else if f == quant.FormatNone && be == core.BackendSIMD {
 		note = "SelectWire F32/F64/I8"
 	}
-	return fwdNs, bwdNs, "OK", note
+	st, nt := suites.StampWebGPUNote("dense", be == core.BackendWebGPU, "OK", note)
+	return fwdNs, bwdNs, st, nt
 }
 
 func fmtNs(ns int64) string {

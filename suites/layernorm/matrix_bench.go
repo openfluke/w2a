@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/layers/layernorm"
@@ -97,6 +98,9 @@ func timeCell(dt core.DType, format quant.Format, be core.Backend, cfg layernorm
 	if be == core.BackendWebGPU && !webgpu.Available() {
 		return 0, 0, "GAP", "no gpu"
 	}
+	if format == quant.FormatAffinePacked && !suites.AffinePackable(1, cfg.Dim) {
+		return 0, 0, "GAP", suites.AffineSkipNote()
+	}
 	l, err := newLayer(cfg, dt, format, be)
 	if err != nil {
 		return 0, 0, failOrGap(be), err.Error()
@@ -133,5 +137,6 @@ func timeCell(dt core.DType, format quant.Format, be core.Backend, cfg layernorm
 		}
 		bwdTotal += time.Since(t1)
 	}
-	return fwdTotal.Nanoseconds() / int64(iters), bwdTotal.Nanoseconds() / int64(iters), "OK", ""
+	st, nt := suites.StampWebGPUNote("layernorm", be == core.BackendWebGPU, "OK", "")
+	return fwdTotal.Nanoseconds() / int64(iters), bwdTotal.Nanoseconds() / int64(iters), st, nt
 }

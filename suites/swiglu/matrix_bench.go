@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/simd"
@@ -97,6 +98,12 @@ func timeCell(dt core.DType, format quant.Format, be core.Backend, cfg swiglu.Co
 	if be == core.BackendWebGPU && !webgpu.Available() {
 		return 0, 0, "GAP", "no gpu"
 	}
+	// Gate/Up weights are [·×InputDim]; Down is [·×IntermediateDim] — Pack()
+	// packs all three, so both column counts must be AffinePackable.
+	if format == quant.FormatAffinePacked &&
+		(!suites.AffinePackable(cfg.IntermediateDim, cfg.InputDim) || !suites.AffinePackable(cfg.InputDim, cfg.IntermediateDim)) {
+		return 0, 0, "GAP", suites.AffineSkipNote()
+	}
 	l, err := newLayer(cfg, dt, format, be)
 	if err != nil {
 		return 0, 0, failOrGap(be), err.Error()
@@ -133,5 +140,6 @@ func timeCell(dt core.DType, format quant.Format, be core.Backend, cfg swiglu.Co
 		}
 		bwdTotal += time.Since(t1)
 	}
-	return fwdTotal.Nanoseconds() / int64(iters), bwdTotal.Nanoseconds() / int64(iters), "OK", ""
+	st, nt := suites.StampWebGPUNote("swiglu", be == core.BackendWebGPU, "OK", "")
+	return fwdTotal.Nanoseconds() / int64(iters), bwdTotal.Nanoseconds() / int64(iters), st, nt
 }

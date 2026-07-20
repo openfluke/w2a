@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/architecture"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/runtime/forward"
@@ -129,6 +130,10 @@ func timeTrainCube(n int, be core.Backend, batch, warm, iters int, lr float64, d
 	if be == core.BackendWebGPU && !webgpu.Available() {
 		return 0, "GAP", "no gpu"
 	}
+	if format == quant.FormatAffinePacked &&
+		(!suites.AffinePackable(cfg.IntermediateDim, cfg.InputDim) || !suites.AffinePackable(cfg.InputDim, cfg.IntermediateDim)) {
+		return 0, "GAP", suites.AffineSkipNote()
+	}
 	g, err := buildSwiGLUCube(n, be, dt, format, cfg)
 	if err != nil {
 		return 0, failOrGap(be), err.Error()
@@ -185,7 +190,8 @@ func benchTrainStep(g *architecture.Grid, batch, dim, warm, iters int, lr float6
 		}
 		total += time.Since(t0)
 	}
-	return total.Nanoseconds() / int64(iters), "OK", ""
+	st, nt := suites.StampWebGPUNote("swiglu", be == core.BackendWebGPU, "OK", "")
+	return total.Nanoseconds() / int64(iters), st, nt
 }
 
 func trainBatch(batch, dim int) (x, y *core.Tensor[float32]) {

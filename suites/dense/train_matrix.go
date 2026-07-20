@@ -5,13 +5,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/architecture"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/dense"
-	"github.com/openfluke/welvet/runtime/forward"
 	"github.com/openfluke/welvet/quant"
-	"github.com/openfluke/welvet/simd"
+	"github.com/openfluke/welvet/runtime/forward"
 	"github.com/openfluke/welvet/runtime/training"
+	"github.com/openfluke/welvet/simd"
 	"github.com/openfluke/welvet/webgpu"
 )
 
@@ -147,6 +148,10 @@ func timeTrainCube(n int, be core.Backend, batch, dim, warm, iters int, lr float
 	if be == core.BackendWebGPU && !webgpu.Available() {
 		return 0, "GAP", "no gpu"
 	}
+	// Dense weights are dim×dim (cols=dim); AffinePacked needs cols%64==0.
+	if format == quant.FormatAffinePacked && !suites.AffinePackable(dim, dim) {
+		return 0, "GAP", suites.AffineSkipNote()
+	}
 	g, err := buildDenseCube(n, dim, be, dt, format)
 	if err != nil {
 		return 0, failOrGap(be), err.Error()
@@ -216,7 +221,8 @@ func benchTrainStep(g *architecture.Grid, batch, in, out, warm, iters int, lr fl
 		}
 		total += time.Since(t0)
 	}
-	return total.Nanoseconds() / int64(iters), "OK", ""
+	st, nt := suites.StampWebGPUNote("dense", be == core.BackendWebGPU, "OK", "")
+	return total.Nanoseconds() / int64(iters), st, nt
 }
 
 func trainBatch[T core.Numeric](batch, in, out int) (x, y *core.Tensor[T]) {

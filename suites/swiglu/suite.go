@@ -77,7 +77,9 @@ func RunOne(n int) error {
 
 func tinyCfg() swiglu.Config { return swiglu.Config{InputDim: 8, IntermediateDim: 16} }
 func defaultCfg() swiglu.Config {
-	return swiglu.Config{InputDim: 32, IntermediateDim: 64}
+	// cols on Gate/Up = InputDim; cols on Down = IntermediateDim — both must be
+	// %64==0 so AffinePacked cells exercise SIMD/CPU pack instead of AffineSkip.
+	return swiglu.Config{InputDim: 64, IntermediateDim: 128}
 }
 
 func eyeInit(rows, cols int) []float32 {

@@ -42,8 +42,39 @@ func WebGPUKind(layer string) (statusIfWorks string, note string) {
 // StampWebGPUNote attaches the honest on-device note when a WebGPU cell is OK
 // and the caller left note empty (keeps an existing more-specific note).
 func StampWebGPUNote(layer string, isWebGPU bool, status, note string) (string, string) {
-	if !isWebGPU || status != "OK" || note != "" {
+	return StampBackendNote(layer, false, isWebGPU, status, note)
+}
+
+// SIMDKind reports honest SIMD depth for a layer (proj DotTile vs host ALU).
+func SIMDKind(layer string) (statusIfWorks string, note string) {
+	switch layer {
+	case "dense":
+		return "OK", "Plan 9 GEMV/saxpy (incl. AffinePacked inflate+DotTile)"
+	case "rmsnorm", "layernorm":
+		return "OK", "DotTile stats; scale on host"
+	case "swiglu":
+		return "OK", "proj Dense SIMD; SiLU⊙ host"
+	case "mha":
+		return "OK", "proj Dense SIMD; attn ALU host"
+	case "cnn1", "cnn2", "cnn3":
+		return "OK", "im2col host + Dense SIMD GEMV"
+	case "softmax", "embedding":
+		return "OK", "host ALU (Enabled gate only)"
+	default:
+		return "OK", "SIMD path (see layer simd.go)"
+	}
+}
+
+// StampBackendNote stamps SIMD or WebGPU honesty notes on OK cells.
+func StampBackendNote(layer string, isSIMD, isWebGPU bool, status, note string) (string, string) {
+	if status != "OK" || note != "" {
 		return status, note
 	}
-	return WebGPUKind(layer)
+	if isWebGPU {
+		return WebGPUKind(layer)
+	}
+	if isSIMD {
+		return SIMDKind(layer)
+	}
+	return status, note
 }

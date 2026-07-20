@@ -137,6 +137,6 @@ func timeCell(dt core.DType, format quant.Format, be core.Backend, cfg cnn2.Conf
 		}
 		bwdTotal += time.Since(t1)
 	}
-	st, nt := suites.StampWebGPUNote("cnn2", be == core.BackendWebGPU, "OK", "")
+	st, nt := suites.StampBackendNote("cnn2", be == core.BackendSIMD, be == core.BackendWebGPU, "OK", "")
 	return fwdTotal.Nanoseconds() / int64(iters), bwdTotal.Nanoseconds() / int64(iters), st, nt
 }

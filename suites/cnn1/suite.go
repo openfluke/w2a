@@ -84,8 +84,9 @@ func tinyCfg() cnn1.Config {
 }
 
 func defaultCfg() cnn1.Config {
+	// PatchDim = InChannels*Kernel = 64 so AffinePacked Dense GEMV is packable.
 	return cnn1.Config{
-		InChannels: 4, Filters: 4, SeqLen: 16, Kernel: 3, Stride: 1, Padding: 1,
+		InChannels: 8, Filters: 8, SeqLen: 16, Kernel: 8, Stride: 1, Padding: 3,
 		Activation: core.ActivationLinear,
 	}
 }

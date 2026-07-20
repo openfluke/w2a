@@ -596,8 +596,9 @@ func fullMatrixGaps() error {
 				failN++
 				status = "GAP"
 				note = err.Error()
-			} else if p.Backend == core.BackendWebGPU {
-				status, note = suites.StampWebGPUNote("dense", true, status, note)
+			} else if p.Backend == core.BackendWebGPU || p.Backend == core.BackendSIMD {
+				status, note = suites.StampBackendNote("dense",
+					p.Backend == core.BackendSIMD, p.Backend == core.BackendWebGPU, status, note)
 			}
 		}
 		if status == "GAP" && len(samples) < 6 {

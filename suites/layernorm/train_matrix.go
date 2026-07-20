@@ -192,7 +192,7 @@ func benchTrainStep(g *architecture.Grid, batch, dim, warm, iters int, lr float6
 		}
 		total += time.Since(t0)
 	}
-	st, nt := suites.StampWebGPUNote("layernorm", be == core.BackendWebGPU, "OK", "")
+	st, nt := suites.StampBackendNote("layernorm", be == core.BackendSIMD, be == core.BackendWebGPU, "OK", "")
 	return total.Nanoseconds() / int64(iters), st, nt
 }
 

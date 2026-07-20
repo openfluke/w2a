@@ -84,8 +84,9 @@ func tinyCfg() cnn2.Config {
 }
 
 func defaultCfg() cnn2.Config {
+	// PatchDim = InChannels*K*K = 4*4*4 = 64 — AffinePacked packable.
 	return cnn2.Config{
-		InChannels: 4, Filters: 4, Height: 12, Width: 12, Kernel: 3, Stride: 1, Padding: 1,
+		InChannels: 4, Filters: 4, Height: 12, Width: 12, Kernel: 4, Stride: 1, Padding: 1,
 		Activation: core.ActivationLinear,
 	}
 }

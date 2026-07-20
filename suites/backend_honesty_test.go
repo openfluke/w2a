@@ -21,3 +21,10 @@ func TestStampWebGPUNote(t *testing.T) {
 		t.Fatalf("should keep existing note, got %q", nt)
 	}
 }
+
+func TestStampBackendNoteSIMD(t *testing.T) {
+	st, nt := StampBackendNote("dense", true, false, "OK", "")
+	if st != "OK" || nt == "" {
+		t.Fatalf("got %s %q", st, nt)
+	}
+}

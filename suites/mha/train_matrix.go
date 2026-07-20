@@ -201,7 +201,7 @@ func benchTrainStep(g *architecture.Grid, batch, seq, d, warm, iters int, lr flo
 		}
 		total += time.Since(t0)
 	}
-	st, nt := suites.StampWebGPUNote("mha", be == core.BackendWebGPU, "OK", "")
+	st, nt := suites.StampBackendNote("mha", be == core.BackendSIMD, be == core.BackendWebGPU, "OK", "")
 	return total.Nanoseconds() / int64(iters), st, nt
 }
 

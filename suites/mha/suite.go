@@ -80,7 +80,8 @@ func RunOne(n int) error {
 }
 
 func defaultCfg() mha.Config {
-	return mha.DecoderCausal(32, 4, 4)
+	// DModel=64, QDim=64 → AffinePackable on Q/K/V (cols=DModel) and O (cols=QDim).
+	return mha.DecoderCausal(64, 4, 4)
 }
 
 func tinyCfg() mha.Config {

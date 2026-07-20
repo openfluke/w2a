@@ -40,7 +40,7 @@ func TimedTrainGridsQuant() error {
 
 func timedTrainFormatNoneGrids(sizes []int, title string) error {
 	const (
-		dim   = 32
+		dim   = 64
 		batch = 2
 		lr    = 1e-2
 	)
@@ -86,7 +86,7 @@ func timedTrainFormatNoneGrids(sizes []int, title string) error {
 
 func timedTrainQuantGrids(sizes []int, title string) error {
 	const (
-		dim   = 32
+		dim   = 64
 		batch = 2
 		lr    = 1e-2
 	)
@@ -221,7 +221,7 @@ func benchTrainStep(g *architecture.Grid, batch, in, out, warm, iters int, lr fl
 		}
 		total += time.Since(t0)
 	}
-	st, nt := suites.StampWebGPUNote("dense", be == core.BackendWebGPU, "OK", "")
+	st, nt := suites.StampBackendNote("dense", be == core.BackendSIMD, be == core.BackendWebGPU, "OK", "")
 	return total.Nanoseconds() / int64(iters), st, nt
 }
 

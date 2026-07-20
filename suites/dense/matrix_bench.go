@@ -155,7 +155,7 @@ func timeCell(dt core.DType, be core.Backend, batch, in, out, warm, iters int) (
 		}
 		return fwdNs, bwdNs, "GAP", "bwd: " + trimErr(err)
 	}
-	st, nt := suites.StampWebGPUNote("dense", be == core.BackendWebGPU, "OK", "")
+	st, nt := suites.StampBackendNote("dense", be == core.BackendSIMD, be == core.BackendWebGPU, "OK", "")
 	return fwdNs, bwdNs, st, nt
 }
 
@@ -300,7 +300,7 @@ func timeQuantCell(f quant.Format, be core.Backend, batch, in, out, warm, iters 
 	} else if f == quant.FormatNone && be == core.BackendSIMD {
 		note = "SelectWire F32/F64/I8"
 	}
-	st, nt := suites.StampWebGPUNote("dense", be == core.BackendWebGPU, "OK", note)
+	st, nt := suites.StampBackendNote("dense", be == core.BackendSIMD, be == core.BackendWebGPU, "OK", note)
 	return fwdNs, bwdNs, st, nt
 }
 

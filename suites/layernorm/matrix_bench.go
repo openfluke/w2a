@@ -137,6 +137,6 @@ func timeCell(dt core.DType, format quant.Format, be core.Backend, cfg layernorm
 		}
 		bwdTotal += time.Since(t1)
 	}
-	st, nt := suites.StampWebGPUNote("layernorm", be == core.BackendWebGPU, "OK", "")
+	st, nt := suites.StampBackendNote("layernorm", be == core.BackendSIMD, be == core.BackendWebGPU, "OK", "")
 	return fwdTotal.Nanoseconds() / int64(iters), bwdTotal.Nanoseconds() / int64(iters), st, nt
 }

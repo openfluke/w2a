@@ -189,7 +189,7 @@ func benchTrainStep(g *architecture.Grid, batch int, cfg cnn3.Config, warm, iter
 		}
 		total += time.Since(t0)
 	}
-	st, nt := suites.StampWebGPUNote("cnn3", be == core.BackendWebGPU, "OK", "")
+	st, nt := suites.StampBackendNote("cnn3", be == core.BackendSIMD, be == core.BackendWebGPU, "OK", "")
 	return total.Nanoseconds() / int64(iters), st, nt
 }
 

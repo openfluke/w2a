@@ -77,11 +77,11 @@ func RunOne(n int) error {
 
 // shape-preserving: InputSize == HiddenSize for volumetric cubes
 func tinyCfg() lstm.Config {
-	return lstm.Config{InputSize: 8, HiddenSize: 8, SeqLen: 4}
+	return lstm.Config{InputSize: 64, HiddenSize: 64, SeqLen: 4}
 }
 
 func defaultCfg() lstm.Config {
-	return lstm.Config{InputSize: 16, HiddenSize: 16, SeqLen: 6}
+	return lstm.Config{InputSize: 64, HiddenSize: 64, SeqLen: 6}
 }
 
 func initPacked(cfg lstm.Config) []float32 {

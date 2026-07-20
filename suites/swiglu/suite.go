@@ -75,7 +75,7 @@ func RunOne(n int) error {
 	return nil
 }
 
-func tinyCfg() swiglu.Config { return swiglu.Config{InputDim: 8, IntermediateDim: 16} }
+func tinyCfg() swiglu.Config { return swiglu.Config{InputDim: 64, IntermediateDim: 128} }
 func defaultCfg() swiglu.Config {
 	// cols on Gate/Up = InputDim; cols on Down = IntermediateDim — both must be
 	// %64==0 so AffinePacked cells exercise SIMD/CPU pack instead of AffineSkip.
@@ -158,11 +158,12 @@ func smokeForwardOnly(dt core.DType, format quant.Format, be core.Backend) error
 }
 
 func forwardSmoke() error {
-	l, err := newLayer(tinyCfg(), core.DTypeFloat32, quant.FormatNone, core.BackendCPUTiled)
+	cfg := tinyCfg()
+	l, err := newLayer(cfg, core.DTypeFloat32, quant.FormatNone, core.BackendCPUTiled)
 	if err != nil {
 		return err
 	}
-	x := makeInput(1, 8)
+	x := makeInput(1, cfg.InputDim)
 	_, post, err := swiglu.Forward(l, x)
 	if err != nil {
 		return err
@@ -174,16 +175,18 @@ func forwardSmoke() error {
 	if sum == 0 {
 		return fmt.Errorf("all-zero output")
 	}
-	fmt.Printf("(in=8 inter=16) ")
+	fmt.Printf("(in=%d inter=%d) ", cfg.InputDim, cfg.IntermediateDim)
 	return nil
 }
 
 func seqLayoutSmoke() error {
-	l, err := newLayer(tinyCfg(), core.DTypeFloat32, quant.FormatNone, core.BackendCPUTiled)
+	cfg := tinyCfg()
+	l, err := newLayer(cfg, core.DTypeFloat32, quant.FormatNone, core.BackendCPUTiled)
 	if err != nil {
 		return err
 	}
-	x := core.NewTensor[float32](2, 3, 8)
+	d := cfg.InputDim
+	x := core.NewTensor[float32](2, 3, d)
 	for i := range x.Data {
 		x.Data[i] = float32((i%5)-2) * 0.1
 	}
@@ -191,19 +194,20 @@ func seqLayoutSmoke() error {
 	if err != nil {
 		return err
 	}
-	if len(post.Shape) != 3 || post.Shape[0] != 2 || post.Shape[1] != 3 || post.Shape[2] != 8 {
+	if len(post.Shape) != 3 || post.Shape[0] != 2 || post.Shape[1] != 3 || post.Shape[2] != d {
 		return fmt.Errorf("post shape %v", post.Shape)
 	}
-	fmt.Printf("([2,3,8]) ")
+	fmt.Printf("([2,3,%d]) ", d)
 	return nil
 }
 
 func backwardFiniteDiff() error {
-	l, err := newLayer(tinyCfg(), core.DTypeFloat32, quant.FormatNone, core.BackendCPUTiled)
+	cfg := tinyCfg()
+	l, err := newLayer(cfg, core.DTypeFloat32, quant.FormatNone, core.BackendCPUTiled)
 	if err != nil {
 		return err
 	}
-	x := makeInput(1, 8)
+	x := makeInput(1, cfg.InputDim)
 	pre, post, err := swiglu.Forward(l, x)
 	if err != nil {
 		return err
@@ -304,11 +308,12 @@ func webGPUNoDevice() error {
 		fmt.Printf("(device present — skip negative check) ")
 		return nil
 	}
-	l, err := newLayer(tinyCfg(), core.DTypeFloat32, quant.FormatNone, core.BackendWebGPU)
+	cfg := tinyCfg()
+	l, err := newLayer(cfg, core.DTypeFloat32, quant.FormatNone, core.BackendWebGPU)
 	if err != nil {
 		return err
 	}
-	_, _, err = swiglu.Forward(l, makeInput(1, 8))
+	_, _, err = swiglu.Forward(l, makeInput(1, cfg.InputDim))
 	if err == nil {
 		return fmt.Errorf("expected hard error without WebGPU device")
 	}

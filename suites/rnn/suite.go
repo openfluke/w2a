@@ -77,11 +77,11 @@ func RunOne(n int) error {
 
 // shape-preserving: InputSize == HiddenSize for volumetric cubes
 func tinyCfg() rnn.Config {
-	return rnn.Config{InputSize: 8, HiddenSize: 8, SeqLen: 4}
+	return rnn.Config{InputSize: 64, HiddenSize: 64, SeqLen: 4}
 }
 
 func defaultCfg() rnn.Config {
-	return rnn.Config{InputSize: 16, HiddenSize: 16, SeqLen: 6}
+	return rnn.Config{InputSize: 64, HiddenSize: 64, SeqLen: 6}
 }
 
 func initPacked(cfg rnn.Config) []float32 {

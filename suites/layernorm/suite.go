@@ -75,7 +75,7 @@ func RunOne(n int) error {
 	return nil
 }
 
-func tinyCfg() layernorm.Config { return layernorm.Config{Dim: 32, Eps: 1e-5} }
+func tinyCfg() layernorm.Config { return layernorm.Config{Dim: 64, Eps: 1e-5} } // cols%64 for AffinePacked
 func defaultCfg() layernorm.Config {
 	return layernorm.Config{Dim: 64, Eps: 1e-5}
 }

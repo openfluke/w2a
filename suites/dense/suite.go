@@ -497,8 +497,8 @@ func cpuTiledMatrix() error {
 	n := 0
 	for _, dt := range core.AllDTypes {
 		for _, f := range quant.AllFormats {
-			// smoke shape is out×in = 8×16 — AffinePacked needs cols%64==0.
-			if f == quant.FormatAffinePacked && !suites.AffinePackable(8, 16) {
+			// smoke shape is out×in = 8×64 — AffinePacked needs cols%64==0.
+			if f == quant.FormatAffinePacked && !suites.AffinePackable(8, 64) {
 				continue
 			}
 			n++
@@ -544,7 +544,7 @@ func simdWebGPUAllQuants() error {
 		if f == quant.FormatNone {
 			continue
 		}
-		if f == quant.FormatAffinePacked && !suites.AffinePackable(8, 16) {
+		if f == quant.FormatAffinePacked && !suites.AffinePackable(8, 64) {
 			continue // smoke shape not packable — see backend_honesty.AffineSkipNote
 		}
 		for _, be := range backends {
@@ -575,11 +575,8 @@ func fullMatrixGaps() error {
 	for _, p := range perms {
 		status := "OK"
 		note := ""
-		// smoke / smokeForwardOnly use cols=16/32 — AffinePacked needs cols%64==0.
-		smokeCols := 16
-		if p.Backend == core.BackendWebGPU {
-			smokeCols = 32
-		}
+		// smoke / smokeForwardOnly use cols=64 — AffinePacked needs cols%64==0.
+		smokeCols := 64
 		if p.Format == quant.FormatAffinePacked && !suites.AffinePackable(8, smokeCols) {
 			failN++
 			status = "GAP"
@@ -612,7 +609,7 @@ func fullMatrixGaps() error {
 }
 
 func smoke[T core.Numeric](dt core.DType, format quant.Format, backend core.Backend) error {
-	const in, out = 16, 8
+	const in, out = 64, 8
 	init := make([]T, out*in)
 	for i := range init {
 		init[i] = core.FromFloat64[T](float64((i%13)-6) * 0.1)
@@ -659,7 +656,7 @@ func smoke[T core.Numeric](dt core.DType, format quant.Format, backend core.Back
 }
 
 func smokeForwardOnly[T core.Numeric](dt core.DType, format quant.Format, backend core.Backend) error {
-	const in, out = 32, 8
+	const in, out = 64, 8
 	init := make([]T, out*in)
 	for i := range init {
 		init[i] = core.FromFloat64[T](float64((i%13)-6) * 0.1)

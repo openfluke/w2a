@@ -76,11 +76,11 @@ func RunOne(n int) error {
 }
 
 func tinyCfg() sequential.Config {
-	return sequential.Config{Dim: 8, SeqLen: 4, Depth: 2}
+	return sequential.Config{Dim: 64, SeqLen: 4, Depth: 2}
 }
 
 func defaultCfg() sequential.Config {
-	return sequential.Config{Dim: 16, SeqLen: 6, Depth: 2}
+	return sequential.Config{Dim: 64, SeqLen: 6, Depth: 2}
 }
 
 func eyePacked(cfg sequential.Config) []float32 {

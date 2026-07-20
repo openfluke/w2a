@@ -77,8 +77,9 @@ func RunOne(n int) error {
 
 // shape-preserving for volumetric train: InCh==Filters, same-pad K=3 P=1
 func tinyCfg() cnn2.Config {
+	// PatchDim=64 + InCh==Filters for volumetric mesh chaining.
 	return cnn2.Config{
-		InChannels: 2, Filters: 2, Height: 8, Width: 8, Kernel: 3, Stride: 1, Padding: 1,
+		InChannels: 64, Filters: 64, Height: 6, Width: 6, Kernel: 1, Stride: 1, Padding: 0,
 		Activation: core.ActivationLinear,
 	}
 }

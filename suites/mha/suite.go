@@ -85,8 +85,8 @@ func defaultCfg() mha.Config {
 }
 
 func tinyCfg() mha.Config {
-	cfg := mha.DecoderCausal(8, 2, 2)
-	cfg.HeadDim = 4
+	// DModel=64, QDim=64 → AffinePackable on Q/K/V and O (same as defaultCfg).
+	cfg := mha.DecoderCausal(64, 4, 4)
 	cfg.MaxSeqLen = 16
 	return cfg
 }
@@ -404,11 +404,12 @@ func webGPUNoDevice() error {
 		fmt.Printf("(device present — skip negative check) ")
 		return nil
 	}
-	l, err := newLayer(tinyCfg(), core.DTypeFloat32, quant.FormatNone, core.BackendWebGPU)
+	cfg := tinyCfg()
+	l, err := newLayer(cfg, core.DTypeFloat32, quant.FormatNone, core.BackendWebGPU)
 	if err != nil {
 		return err
 	}
-	_, _, err = mha.Forward(l, makeInput(1, 2, 8))
+	_, _, err = mha.Forward(l, makeInput(1, 2, cfg.DModel))
 	if err == nil {
 		return fmt.Errorf("expected hard error without WebGPU device")
 	}

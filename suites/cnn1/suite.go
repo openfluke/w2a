@@ -75,10 +75,10 @@ func RunOne(n int) error {
 	return nil
 }
 
-// shape-preserving for volumetric train: InCh==Filters, same-pad K=3 P=1
+// Affine-packable (PatchDim=InCh·K=64) + volumetric shape-preserving (InCh==Filters, K=1).
 func tinyCfg() cnn1.Config {
 	return cnn1.Config{
-		InChannels: 2, Filters: 2, SeqLen: 8, Kernel: 3, Stride: 1, Padding: 1,
+		InChannels: 64, Filters: 64, SeqLen: 8, Kernel: 1, Stride: 1, Padding: 0,
 		Activation: core.ActivationLinear,
 	}
 }

@@ -76,11 +76,11 @@ func RunOne(n int) error {
 }
 
 func tinyCfg() residual.Config {
-	return residual.Config{Dim: 8, SeqLen: 4, Depth: 1}
+	return residual.Config{Dim: 64, SeqLen: 4, Depth: 1}
 }
 
 func defaultCfg() residual.Config {
-	return residual.Config{Dim: 16, SeqLen: 6, Depth: 1}
+	return residual.Config{Dim: 64, SeqLen: 6, Depth: 1}
 }
 
 func eyePacked(cfg residual.Config) []float32 {

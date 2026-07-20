@@ -75,7 +75,7 @@ func RunOne(n int) error {
 	return nil
 }
 
-func tinyCfg() rmsnorm.Config { return rmsnorm.Config{Dim: 32, Eps: 1e-6} }
+func tinyCfg() rmsnorm.Config { return rmsnorm.Config{Dim: 64, Eps: 1e-6} } // cols%64 for AffinePacked
 func defaultCfg() rmsnorm.Config {
 	return rmsnorm.Config{Dim: 64, Eps: 1e-6}
 }

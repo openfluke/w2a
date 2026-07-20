@@ -43,8 +43,9 @@ type Kind struct {
 }
 
 // AllKinds — every implemented weighted Op (+ weightless Softmax).
+// dim=64 so FormatAffinePacked cells are packable (cols%64==0) across Dense projs.
 func AllKinds() []Kind {
-	const dim = 16
+	const dim = 64
 	return []Kind{
 		{
 			Name: "dense",
@@ -113,70 +114,71 @@ func AllKinds() []Kind {
 		{
 			Name: "cnn1",
 			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
-				cfg := cnn1.Config{InChannels: 2, Filters: 2, SeqLen: 8, Kernel: 3, Padding: 1, Activation: core.ActivationLinear}
+				// PatchDim=InCh·K=64 → AffinePacked packable; K=1 keeps spatial size.
+				cfg := cnn1.Config{InChannels: 64, Filters: 8, SeqLen: 4, Kernel: 1, Stride: 1, Padding: 0, Activation: core.ActivationLinear}
 				l, err := cnn1.NewConfigured[float32](cfg, dt, format, nil)
 				if err != nil {
 					return nil, err
 				}
 				return bind(l.Core, l)
 			},
-			InputShape:  []int{1, 2, 8},
-			TargetShape: []int{1, 2, 8}, // padding=1 → same length
+			InputShape:  []int{1, 64, 4},
+			TargetShape: []int{1, 8, 4},
 		},
 		{
 			Name: "cnn2",
 			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
-				cfg := cnn2.Config{InChannels: 2, Filters: 2, Height: 6, Width: 6, Kernel: 3, Padding: 1, Activation: core.ActivationLinear}
+				cfg := cnn2.Config{InChannels: 64, Filters: 8, Height: 4, Width: 4, Kernel: 1, Stride: 1, Padding: 0, Activation: core.ActivationLinear}
 				l, err := cnn2.NewConfigured[float32](cfg, dt, format, nil)
 				if err != nil {
 					return nil, err
 				}
 				return bind(l.Core, l)
 			},
-			InputShape:  []int{1, 2, 6, 6},
-			TargetShape: []int{1, 2, 6, 6},
+			InputShape:  []int{1, 64, 4, 4},
+			TargetShape: []int{1, 8, 4, 4},
 		},
 		{
 			Name: "cnn3",
 			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
-				cfg := cnn3.Config{InChannels: 1, Filters: 1, Depth: 4, Height: 4, Width: 4, Kernel: 3, Padding: 1, Activation: core.ActivationLinear}
+				cfg := cnn3.Config{InChannels: 64, Filters: 8, Depth: 2, Height: 2, Width: 2, Kernel: 1, Stride: 1, Padding: 0, Activation: core.ActivationLinear}
 				l, err := cnn3.NewConfigured[float32](cfg, dt, format, nil)
 				if err != nil {
 					return nil, err
 				}
 				return bind(l.Core, l)
 			},
-			InputShape:  []int{1, 1, 4, 4, 4},
-			TargetShape: []int{1, 1, 4, 4, 4},
+			InputShape:  []int{1, 64, 2, 2, 2},
+			TargetShape: []int{1, 8, 2, 2, 2},
 		},
 		{
 			Name: "rnn",
 			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
-				l, err := rnn.NewConfigured[float32](rnn.Config{InputSize: 8, HiddenSize: 8, SeqLen: 2}, dt, format, nil)
+				l, err := rnn.NewConfigured[float32](rnn.Config{InputSize: dim, HiddenSize: dim, SeqLen: 2}, dt, format, nil)
 				if err != nil {
 					return nil, err
 				}
 				return bind(l.Core, l)
 			},
-			InputShape:  []int{1, 2, 8},
-			TargetShape: []int{1, 2, 8},
+			InputShape:  []int{1, 2, dim},
+			TargetShape: []int{1, 2, dim},
 		},
 		{
 			Name: "lstm",
 			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
-				l, err := lstm.NewConfigured[float32](lstm.Config{InputSize: 8, HiddenSize: 8, SeqLen: 2}, dt, format, nil)
+				l, err := lstm.NewConfigured[float32](lstm.Config{InputSize: dim, HiddenSize: dim, SeqLen: 2}, dt, format, nil)
 				if err != nil {
 					return nil, err
 				}
 				return bind(l.Core, l)
 			},
-			InputShape:  []int{1, 2, 8},
-			TargetShape: []int{1, 2, 8},
+			InputShape:  []int{1, 2, dim},
+			TargetShape: []int{1, 2, dim},
 		},
 		{
 			Name: "embedding",
 			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
-				cfg := embedding.Config{VocabSize: 32, EmbeddingDim: dim, SeqLen: 4}
+				cfg := embedding.Config{VocabSize: 64, EmbeddingDim: dim, SeqLen: 4}
 				l, err := embedding.NewConfigured(cfg, dt, format, ramp(cfg.WeightCount()))
 				if err != nil {
 					return nil, err
@@ -187,7 +189,7 @@ func AllKinds() []Kind {
 			TargetShape: []int{1, 4, dim},
 			FillInput: func(x *core.Tensor[float32]) {
 				for i := range x.Data {
-					x.Data[i] = float32(i % 32)
+					x.Data[i] = float32(i % 64)
 				}
 			},
 		},
@@ -232,41 +234,41 @@ func AllKinds() []Kind {
 		{
 			Name: "convt1",
 			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
-				cfg := convt1.Config{InChannels: 2, Filters: 2, SeqLen: 4, Kernel: 3, Stride: 1, Padding: 1, Activation: core.ActivationLinear}
+				cfg := convt1.Config{InChannels: 64, Filters: 8, SeqLen: 4, Kernel: 1, Stride: 1, Padding: 0, Activation: core.ActivationLinear}
 				l, err := convt1.NewConfigured[float32](cfg, dt, format, nil)
 				if err != nil {
 					return nil, err
 				}
 				return bind(l.Core, l)
 			},
-			InputShape:  []int{1, 2, 4},
-			TargetShape: []int{1, 2, 4},
+			InputShape:  []int{1, 64, 4},
+			TargetShape: []int{1, 8, 4},
 		},
 		{
 			Name: "convt2",
 			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
-				cfg := convt2.Config{InChannels: 1, Filters: 1, Height: 4, Width: 4, Kernel: 3, Padding: 1, Activation: core.ActivationLinear}
+				cfg := convt2.Config{InChannels: 64, Filters: 8, Height: 4, Width: 4, Kernel: 1, Stride: 1, Padding: 0, Activation: core.ActivationLinear}
 				l, err := convt2.NewConfigured[float32](cfg, dt, format, nil)
 				if err != nil {
 					return nil, err
 				}
 				return bind(l.Core, l)
 			},
-			InputShape:  []int{1, 1, 4, 4},
-			TargetShape: []int{1, 1, 4, 4},
+			InputShape:  []int{1, 64, 4, 4},
+			TargetShape: []int{1, 8, 4, 4},
 		},
 		{
 			Name: "convt3",
 			Make: func(dt core.DType, format quant.Format) (*architecture.Grid, error) {
-				cfg := convt3.Config{InChannels: 1, Filters: 1, Depth: 3, Height: 3, Width: 3, Kernel: 3, Padding: 1, Activation: core.ActivationLinear}
+				cfg := convt3.Config{InChannels: 64, Filters: 8, Depth: 2, Height: 2, Width: 2, Kernel: 1, Stride: 1, Padding: 0, Activation: core.ActivationLinear}
 				l, err := convt3.NewConfigured[float32](cfg, dt, format, nil)
 				if err != nil {
 					return nil, err
 				}
 				return bind(l.Core, l)
 			},
-			InputShape:  []int{1, 1, 3, 3, 3},
-			TargetShape: []int{1, 1, 3, 3, 3},
+			InputShape:  []int{1, 64, 2, 2, 2},
+			TargetShape: []int{1, 8, 2, 2, 2},
 		},
 		{
 			Name: "parallel",

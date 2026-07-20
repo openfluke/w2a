@@ -76,11 +76,11 @@ func RunOne(n int) error {
 }
 
 func tinyCfg() embedding.Config {
-	return embedding.Config{VocabSize: 32, EmbeddingDim: 8, SeqLen: 4}
+	return embedding.Config{VocabSize: 64, EmbeddingDim: 64, SeqLen: 4}
 }
 
 func defaultCfg() embedding.Config {
-	return embedding.Config{VocabSize: 64, EmbeddingDim: 16, SeqLen: 6}
+	return embedding.Config{VocabSize: 64, EmbeddingDim: 64, SeqLen: 6}
 }
 
 func initPacked(cfg embedding.Config) []float32 {

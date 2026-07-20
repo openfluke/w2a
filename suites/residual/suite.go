@@ -357,6 +357,9 @@ func simdWebGPUAllQuants() error {
 		if f == quant.FormatNone {
 			continue
 		}
+		if f == quant.FormatAffinePacked && (!suites.AffinePackable(tinyCfg().Dim, tinyCfg().Dim)) {
+			continue // shape not packable — see backend_honesty.AffineSkipNote
+		}
 		for _, be := range backends {
 			if be == core.BackendSIMD && !simd.Enabled() {
 				fails = append(fails, fmt.Sprintf("%s/%s: SIMD not enabled", f, be))

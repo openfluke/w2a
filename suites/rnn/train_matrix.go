@@ -1,6 +1,7 @@
 package rnn
 
 import (
+	"github.com/openfluke/w2a/suites"
 	"fmt"
 	"strings"
 	"time"
@@ -128,6 +129,9 @@ func timeTrainCube(n int, be core.Backend, batch, warm, iters int, lr float64, d
 	}
 	if be == core.BackendWebGPU && !webgpu.Available() {
 		return 0, "GAP", "no gpu"
+	}
+	if format == quant.FormatAffinePacked && (!suites.AffinePackable(cfg.HiddenSize, cfg.InputSize) || !suites.AffinePackable(cfg.HiddenSize, cfg.HiddenSize)) {
+		return 0, "GAP", suites.AffineSkipNote()
 	}
 	g, err := buildRNNCube(n, be, dt, format, cfg)
 	if err != nil {

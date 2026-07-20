@@ -1,6 +1,7 @@
 package residual
 
 import (
+	"github.com/openfluke/w2a/suites"
 	"fmt"
 	"strings"
 	"time"
@@ -94,6 +95,9 @@ func timeCell(dt core.DType, format quant.Format, be core.Backend, cfg residual.
 	}
 	if be == core.BackendWebGPU && !webgpu.Available() {
 		return 0, 0, "GAP", "no gpu"
+	}
+	if format == quant.FormatAffinePacked && (!suites.AffinePackable(cfg.Dim, cfg.Dim)) {
+		return 0, 0, "GAP", suites.AffineSkipNote()
 	}
 	l, err := newLayer(cfg, dt, format, be)
 	if err != nil {

@@ -23,6 +23,11 @@ func Cases() []Case {
 	return []Case{
 		{Name: "Forward smoke (Softmax last-axis)", Run: forwardSmoke},
 		{Name: "Shape-preserving [batch,seq,dim] smoke", Run: shapeSmoke},
+		{Name: "Variant Gumbel forward smoke", Run: gumbelSmoke},
+		{Name: "Variant Masked forward smoke", Run: maskedSmoke},
+		{Name: "Variant Sparsemax forward smoke", Run: sparseSmoke},
+		{Name: "Variant Entmax forward smoke", Run: entmaxSmoke},
+		{Name: "Variant Hierarchical grid smoke", Run: hierarchicalSmoke},
 		{Name: "Backward finite-diff dX spot-check", Run: backwardFiniteDiff},
 		{Name: "Grad verify — CPU vs SIMD agreement", Run: gradVerifyBackends},
 		{Name: "WebGPU hard-errors without device (no host fake)", Run: webGPUNoDevice},
@@ -184,6 +189,58 @@ func shapeSmoke() error {
 	}
 	fmt.Printf("([2,%d,12]) ", cfg.SeqLen)
 	return nil
+}
+
+func variantSmoke(kind softmax.Kind, extra func(*softmax.Config)) error {
+	cfg := tinyCfg()
+	cfg.Kind = kind
+	if extra != nil {
+		extra(&cfg)
+	}
+	l, err := newLayer(cfg, core.DTypeFloat32, quant.FormatNone, core.BackendCPUTiled)
+	if err != nil {
+		return err
+	}
+	_, post, err := softmax.Forward(l, makeInput(cfg, 1))
+	if err != nil {
+		return err
+	}
+	var sum float64
+	for _, v := range post.Data {
+		sum += float64(v)
+	}
+	if sum <= 0 {
+		return fmt.Errorf("zero sum")
+	}
+	fmt.Printf("(%s sum≈%.2f) ", kind, sum)
+	return nil
+}
+
+func gumbelSmoke() error {
+	return variantSmoke(softmax.KindGumbel, nil)
+}
+
+func maskedSmoke() error {
+	return variantSmoke(softmax.KindMasked, func(c *softmax.Config) {
+		c.Mask = []bool{true, true, false, true, true, true, true, true}
+	})
+}
+
+func sparseSmoke() error {
+	return variantSmoke(softmax.KindSparse, nil)
+}
+
+func entmaxSmoke() error {
+	return variantSmoke(softmax.KindEntmax, func(c *softmax.Config) {
+		c.EntmaxAlpha = 1.5
+	})
+}
+
+func hierarchicalSmoke() error {
+	return variantSmoke(softmax.KindHierarchical, func(c *softmax.Config) {
+		c.HierarchyLevels = []int{4, 8}
+		c.Dim = 8
+	})
 }
 
 func backwardFiniteDiff() error {

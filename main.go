@@ -40,6 +40,7 @@ import (
 	memorysuite "github.com/openfluke/w2a/suites/memory"
 	seedsuite "github.com/openfluke/w2a/suites/seed"
 	serializationsuite "github.com/openfluke/w2a/suites/serialization"
+	helperssuite "github.com/openfluke/w2a/suites/helpers"
 )
 
 type suite struct {
@@ -228,6 +229,11 @@ func main() {
 			Name: "Serialization",
 			Desc: "JSON+ENTITY all Ops; native dtype×quant storage truth (no QAT)",
 			Run:  serializationsuite.RunAll,
+		},
+		{
+			Name: "Helpers",
+			Desc: "loom/poly stubs: grafting, templates, ensemble, clustering, observer, evaluation, universal, pipeline",
+			Run:  helperssuite.RunAll,
 		},
 		// Accel remains stub (NPU/QNN/Metal plugins).
 	}

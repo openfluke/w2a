@@ -8,7 +8,9 @@ import (
 	"github.com/openfluke/welvet/architecture"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/dense"
+	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
+	"github.com/openfluke/welvet/runtime/forward"
 	"github.com/openfluke/welvet/stub/clustering"
 	"github.com/openfluke/welvet/stub/ensemble"
 	"github.com/openfluke/welvet/stub/evaluation"
@@ -29,6 +31,8 @@ type Case struct {
 func Cases() []Case {
 	return []Case{
 		{Name: "Grafting GraftGrids Dense branches", Run: graftSmoke},
+		{Name: "Grafting GraftToGrid heterogeneous Dense+MHA", Run: graftHeterogeneousSmoke},
+		{Name: "Grafting ResidualGraftGrid Dense ok, non-Dense errors", Run: residualGraftGridSmoke},
 		{Name: "Templates ChatML BuildPrompt", Run: templateSmoke},
 		{Name: "Ensemble MajorityVote + matches", Run: ensembleSmoke},
 		{Name: "Clustering KMeans + grouping DetectMHA", Run: clusterGroupSmoke},
@@ -101,6 +105,66 @@ func graftSmoke() error {
 	}
 	if len(par.Branches) != 2 {
 		return fmt.Errorf("want 2 branches got %d", len(par.Branches))
+	}
+	return nil
+}
+
+func graftHeterogeneousSmoke() error {
+	g1, err := tinyDenseGrid(8, 8)
+	if err != nil {
+		return err
+	}
+	g2 := architecture.NewGrid(1, 1, 1, 1)
+	ml, err := mha.New(mha.Config{DModel: 8, NumHeads: 2, HeadDim: 4})
+	if err != nil {
+		return err
+	}
+	if err := mha.Place(g2, 0, 0, 0, 0, ml); err != nil {
+		return err
+	}
+	graft, err := grafting.GraftToGrid([]*architecture.Grid{g1, g2})
+	if err != nil {
+		return err
+	}
+	if graft.StackLayerCount() != 2 {
+		return fmt.Errorf("want 2 layers got %d", graft.StackLayerCount())
+	}
+	x := core.NewTensor[float32](1, 8)
+	for i := range x.Data {
+		x.Data[i] = 0.1 * float32(i)
+	}
+	res, err := forward.Forward(graft, x)
+	if err != nil {
+		return fmt.Errorf("forward through Dense->MHA graft: %w", err)
+	}
+	if len(res.Output.Data) == 0 {
+		return fmt.Errorf("empty output")
+	}
+	return nil
+}
+
+func residualGraftGridSmoke() error {
+	g1, err := tinyDenseGrid(4, 4)
+	if err != nil {
+		return err
+	}
+	rg, err := grafting.ResidualGraftGrid(g1)
+	if err != nil {
+		return fmt.Errorf("ResidualGraftGrid(dense): %w", err)
+	}
+	if rg.StackLayerCount() != 1 {
+		return fmt.Errorf("want 1 layer got %d", rg.StackLayerCount())
+	}
+	g2 := architecture.NewGrid(1, 1, 1, 1)
+	ml, err := mha.New(mha.Config{DModel: 8, NumHeads: 2, HeadDim: 4})
+	if err != nil {
+		return err
+	}
+	if err := mha.Place(g2, 0, 0, 0, 0, ml); err != nil {
+		return err
+	}
+	if _, err := grafting.ResidualGraftGrid(g2); err == nil {
+		return fmt.Errorf("expected ResidualGraftGrid(mha) to error (documented gap)")
 	}
 	return nil
 }

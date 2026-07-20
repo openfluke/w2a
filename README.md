@@ -36,3 +36,16 @@ go test ./...                      # everything
 ```
 
 Local module replace: `replace github.com/openfluke/welvet => ../`
+
+## Release
+
+Attaches current `logs/suite.txt` + `logs/suite.pdf` to a GitHub Release tagged with the Welvet scorecard version from `../README.md`.
+
+```bash
+cd welvet/w2a
+go run .            # run suites → logs/suite.txt (+ export PDF if needed)
+./release.sh        # commit source, push, upload suite txt/pdf
+./release.sh --dry-run
+```
+
+Needs `gh auth login` or `GITHUB_TOKEN`. `logs/` and `dist/` stay gitignored.

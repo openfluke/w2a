@@ -3,6 +3,7 @@
 *.out
 bin/
 .DS_Store
+dist/
 
 # Suite run outputs (cleared + rewritten every test run)
 logs/

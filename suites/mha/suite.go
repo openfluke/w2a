@@ -33,6 +33,8 @@ func Cases() []Case {
 		{Name: "§12 SoftmaxSigmoid fwd+bwd smoke", Run: softmaxSigmoidSmoke},
 		{Name: "§12 train Dropout mask + bwd + Validate reject", Run: dropoutTrainSmoke},
 		{Name: "§12 GPU attn gate + CPU↔WebGPU parity", Run: gpuAttnParity},
+		{Name: "Repeat-forward determinism", Run: repeatForwardDet},
+		{Name: "SC↔MC fwd+bwd determinism", Run: scmcFwdBwdDet},
 		{Name: "CPU tiled FormatNone × all 34 dtypes (fwd+bwd)", Run: cpuTiledFormatNoneAll},
 		{Name: "ACTIVATION sweep — all core.Numeric Tensor[T] × CPU/SIMD/WebGPU", Run: ActNumericSweep},
 		{Name: "TIMED matrix — FormatNone × all dtypes × CPU/SIMD/WebGPU", Run: TimedMatrix},

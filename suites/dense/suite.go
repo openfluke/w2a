@@ -40,6 +40,8 @@ func Cases() []Case {
 		{Name: "SIMD fused k/IQ/Affine — CPU packed MatVec parity (no F32 inflate)", Run: fusedKIQAffineSIMDParity},
 		{Name: "SIMD fused AffinePacked — CPU vs SIMD fwd + MatVecPackedBlob", Run: affinePackedSIMDParity},
 		{Name: "§12 AffinePacked WebGPU GEMVT CPU↔GPU parity", Run: affinePackedWebGPUGEMVTParity},
+		{Name: "Repeat-forward determinism", Run: repeatForwardDet},
+		{Name: "SC↔MC fwd+bwd determinism", Run: scmcFwdBwdDet},
 		{Name: "GAP CENSUS — full matrix (prints gaps; always PASS until v1 gate)", Run: fullMatrixGaps},
 		{Name: "TRAIN volumetric — FormatNone × ALL 34 dtypes × CPU/SIMD/WebGPU × 1³/2³/3³", Run: TimedTrainGridsFormatNone},
 		{Name: "TRAIN volumetric — ALL 20 quants × CPU/SIMD/WebGPU × 1³/2³/3³", Run: TimedTrainGridsQuant},

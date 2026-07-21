@@ -41,6 +41,7 @@ import (
 	seedsuite "github.com/openfluke/w2a/suites/seed"
 	serializationsuite "github.com/openfluke/w2a/suites/serialization"
 	helperssuite "github.com/openfluke/w2a/suites/helpers"
+	sevensuite "github.com/openfluke/w2a/suites/seven"
 )
 
 type suite struct {
@@ -234,6 +235,12 @@ func main() {
 			Name: "Helpers",
 			Desc: "loom/poly stubs: grafting, templates, ensemble, clustering, observer, evaluation, universal, pipeline",
 			Run:  helperssuite.RunAll,
+		},
+		{
+			Name: "Seven",
+			Desc: "Lucy-[7]-style SC↔MC, repeat-det, train, ENTITY, S/M/L tiers, 7-Dense volumetric",
+			Run:  sevensuite.RunAll,
+			Menu: sevenSubmenu,
 		},
 		// Accel remains stub (NPU/QNN/Metal plugins).
 	}
@@ -1174,6 +1181,55 @@ func stepSubmenu() {
 		fmt.Println()
 		_ = withSuiteLog(func() error {
 			if err := stepsuite.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
+	}
+}
+
+func sevenSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := sevensuite.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("Seven suite (Lucy-[7]-style)")
+		fmt.Println("  [0] Run ALL seven cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := sevensuite.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ Seven: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := sevensuite.RunOne(n); err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return err
 			}

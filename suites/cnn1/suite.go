@@ -28,6 +28,8 @@ func Cases() []Case {
 		{Name: "WebGPU hard-errors without device (no host fake)", Run: webGPUNoDevice},
 		{Name: "§12 tiled FormatNone f32 WebGPU↔CPU parity", Run: tiledWebGPUParity},
 		{Name: "§12 im2col quant WebGPU smoke (Q4_0)", Run: im2colQuantWebGPUSmoke},
+		{Name: "Repeat-forward determinism", Run: repeatForwardDet},
+		{Name: "SC↔MC fwd+bwd determinism", Run: scmcFwdBwdDet},
 		{Name: "CPU tiled FormatNone × all 34 dtypes (fwd+bwd)", Run: cpuTiledFormatNoneAll},
 		{Name: "ACTIVATION sweep — all core.Numeric Tensor[T] × CPU/SIMD/WebGPU", Run: ActNumericSweep},
 		{Name: "TIMED matrix — FormatNone × all dtypes × CPU/SIMD/WebGPU", Run: TimedMatrix},

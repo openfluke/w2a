@@ -32,8 +32,10 @@ Suites live in `suites/<layer>/` so the menu and `go test` share the same checks
 ```bash
 cd welvet/w2a
 go test ./tests/dense/ -v          # Dense only
+go test ./tests/seven/ -v          # Lucy-[7]-style SC↔MC / det / train / ENTITY
 go test ./...                      # everything
 ```
+
 
 Local module replace: `replace github.com/openfluke/welvet => ../`
 

@@ -27,6 +27,8 @@ func Cases() []Case {
 		{Name: "Grad verify — CPU vs SIMD agreement", Run: gradVerifyBackends},
 		{Name: "WebGPU hard-errors without device (no host fake)", Run: webGPUNoDevice},
 		{Name: "§12 fused FormatNone f32 WebGPU↔CPU parity", Run: fusedWebGPUParity},
+		{Name: "Repeat-forward determinism", Run: repeatForwardDet},
+		{Name: "SC↔MC fwd+bwd determinism", Run: scmcFwdBwdDet},
 		{Name: "CPU tiled FormatNone × all 34 dtypes (fwd+bwd)", Run: cpuTiledFormatNoneAll},
 		{Name: "ACTIVATION sweep — all core.Numeric Tensor[T] × CPU/SIMD/WebGPU", Run: ActNumericSweep},
 		{Name: "TIMED matrix — FormatNone × all dtypes × CPU/SIMD/WebGPU", Run: TimedMatrix},

@@ -12,7 +12,7 @@ See **[welvet/README.md](../../README.md)** for the full v1 checklist and rules:
 | Backend | What’s real today |
 |---------|-------------------|
 | CPU tiled | MatVec across dtype × quant (generic); keep hardening native paths |
-| SIMD | Plan 9: FP32/`None`, Int8/`None`, Q4_0 fused — **everything else errors** |
+| SIMD | Fused for all 20 quants (classic Q* + k/IQ group Dot* + Affine code-dot + BitNet); FormatNone×34 |
 | WebGPU | Device required; unbound / no adapter → **error** (no host fake) |
 
-Run gaps: `w2a` → Dense → `[9] FULL aspirational matrix`.
+Run gaps: `w2a` → Dense → gap census. Fused k/IQ/Affine parity lives in Dense suite (`fused_simd.go`).

@@ -26,6 +26,8 @@ func Cases() []Case {
 		{Name: "Backward finite-diff dγ spot-check", Run: backwardFiniteDiff},
 		{Name: "Grad verify — CPU vs SIMD agreement", Run: gradVerifyBackends},
 		{Name: "WebGPU hard-errors without device (no host fake)", Run: webGPUNoDevice},
+		{Name: "§12 SIMD full scale CPU↔SIMD parity", Run: rmsSimdScaleParity},
+		{Name: "§12 WebGPU RMSNorm bwd CPU↔GPU parity", Run: rmsNormWebGPUBwdParity},
 		{Name: "CPU tiled FormatNone × all 34 dtypes (fwd+bwd)", Run: cpuTiledFormatNoneAll},
 		{Name: "ACTIVATION sweep — all core.Numeric Tensor[T] × CPU/SIMD/WebGPU", Run: ActNumericSweep},
 		{Name: "TIMED matrix — FormatNone × all dtypes × CPU/SIMD/WebGPU", Run: TimedMatrix},

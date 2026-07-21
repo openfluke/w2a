@@ -23,17 +23,23 @@ func WebGPUKind(layer string) (statusIfWorks string, note string) {
 	case "rmsnorm":
 		return "OK", "RMSNorm fwd+bwd on-device (webgpu.RMSNorm/RMSNormBackward)"
 	case "layernorm":
-		return "OK", "LayerNorm fwd on-device; bwd host (webgpu.LayerNorm fwd only)"
+		return "OK", "LayerNorm fwd+bwd on-device (webgpu.LayerNorm/LayerNormBackward)"
 	case "softmax":
-		return "OK", "Softmax fwd+bwd on-device for standard/grid/hierarchical; other kinds host-only (error)"
+		return "OK", "SoftmaxEx fwd+bwd on-device (std/grid/hier/temp + Gumbel/Masked/Sparse/Entmax)"
 	case "swiglu":
-		return "OK", "SiLU⊙ device; proj DenseGEMV/GEMVT device (fwd); bwd combine host"
+		return "OK", "SiLU⊙ fuse fwd+bwd on-device; proj DenseGEMV/GEMVT device"
 	case "mha":
-		return "OK", "attn host; proj DenseGEMV/GEMVT on-device"
+		return "OK", "attn/RoPE fwd+bwd on-device when GPUAttnSupported; else host attn + proj device"
 	case "cnn1", "cnn2", "cnn3":
-		return "OK", "im2col host + on-device DenseGEMV/GEMVT"
+		return "OK", "FormatNone f32 tiled conv on-device; else im2col host + DenseGEMV/GEMVT"
 	case "dense":
-		return "OK", "on-device DenseGEMV/GEMVT"
+		return "OK", "on-device DenseGEMV/GEMVT (AffinePacked resident fwd+bwd)"
+	case "embedding":
+		return "OK", "gather/scatter on-device (webgpu.EmbeddingGather/Scatter)"
+	case "rnn":
+		return "OK", "FormatNone f32 fused RNN step fwd+bwd; else Dense recurrence"
+	case "lstm":
+		return "OK", "FormatNone f32 fused LSTM step fwd+bwd; else Dense recurrence"
 	default:
 		return "GAP", "no WebGPU honesty note registered for layer " + layer
 	}
@@ -51,15 +57,19 @@ func SIMDKind(layer string) (statusIfWorks string, note string) {
 	case "dense":
 		return "OK", "Plan 9 GEMV/saxpy (incl. AffinePacked inflate+DotTile)"
 	case "rmsnorm", "layernorm":
-		return "OK", "DotTile stats; scale on host"
+		return "OK", "DotTile stats + full SIMD scale (RMSNormScaleF32/LayerNormScaleF32)"
 	case "swiglu":
-		return "OK", "proj Dense SIMD; SiLU⊙ host"
+		return "OK", "proj Dense SIMD; SiLU⊙ via simd.SiluMul*"
 	case "mha":
 		return "OK", "proj Dense SIMD; attn ALU host"
 	case "cnn1", "cnn2", "cnn3":
 		return "OK", "im2col host + Dense SIMD GEMV"
-	case "softmax", "embedding":
-		return "OK", "host ALU (Enabled gate only)"
+	case "softmax":
+		return "OK", "simd.SoftmaxF32/SoftmaxBwdF32 (std/temp/grid/hier)"
+	case "embedding":
+		return "OK", "host gather (Enabled gate)"
+	case "rnn", "lstm":
+		return "OK", "Dense SIMD projs; recurrence host ALU"
 	default:
 		return "OK", "SIMD path (see layer simd.go)"
 	}

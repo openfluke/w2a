@@ -28,3 +28,15 @@ func TestStampBackendNoteSIMD(t *testing.T) {
 		t.Fatalf("got %s %q", st, nt)
 	}
 }
+
+func TestWebGPUKindPeakLayers(t *testing.T) {
+	for _, layer := range []string{
+		"mha", "swiglu", "softmax", "layernorm", "rmsnorm",
+		"cnn1", "embedding", "rnn", "lstm", "dense",
+	} {
+		st, nt := WebGPUKind(layer)
+		if st != "OK" || nt == "" {
+			t.Fatalf("%s: got %s %q", layer, st, nt)
+		}
+	}
+}

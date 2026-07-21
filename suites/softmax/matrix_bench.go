@@ -5,10 +5,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/core"
+	"github.com/openfluke/welvet/layers/softmax"
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/simd"
-	"github.com/openfluke/welvet/layers/softmax"
 	"github.com/openfluke/welvet/webgpu"
 )
 
@@ -131,5 +132,11 @@ func timeCell(dt core.DType, format quant.Format, be core.Backend, cfg softmax.C
 		}
 		bwdTotal += time.Since(t1)
 	}
-	return fwdTotal.Nanoseconds() / int64(iters), bwdTotal.Nanoseconds() / int64(iters), "OK", "weightless"
+	st, nt := suites.StampBackendNote("softmax", be == core.BackendSIMD, be == core.BackendWebGPU, "OK", "")
+	if nt != "" {
+		nt = nt + "; weightless"
+	} else {
+		nt = "weightless"
+	}
+	return fwdTotal.Nanoseconds() / int64(iters), bwdTotal.Nanoseconds() / int64(iters), st, nt
 }

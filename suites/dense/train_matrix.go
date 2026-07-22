@@ -195,6 +195,8 @@ func buildDenseCube(n, dim int, be core.Backend, dt core.DType, format quant.For
 }
 
 func benchTrainStep(g *architecture.Grid, batch, in, out, warm, iters int, lr float64, be core.Backend) (ns int64, status, note string) {
+	// Default volumetric matrix still uses float32 acts; Numeric act×dtype is covered
+	// by multiNumericTrain. After each step, confirm non-f32 stores drop masterF32.
 	x, y := trainBatch[float32](batch, in, out)
 	for i := 0; i < warm; i++ {
 		fwd, err := forward.Forward(g, x)
@@ -221,8 +223,28 @@ func benchTrainStep(g *architecture.Grid, batch, in, out, warm, iters int, lr fl
 		}
 		total += time.Since(t0)
 	}
+	if err := assertNoRetainedMaster(g); err != nil {
+		return 0, failOrGap(be), err.Error()
+	}
 	st, nt := suites.StampBackendNote("dense", be == core.BackendSIMD, be == core.BackendWebGPU, "OK", "")
 	return total.Nanoseconds() / int64(iters), st, nt
+}
+
+func assertNoRetainedMaster(g *architecture.Grid) error {
+	for _, c := range g.HopOrder() {
+		cell := g.At(c.Z, c.Y, c.X, c.L)
+		if cell == nil {
+			continue
+		}
+		dl, ok := cell.Op.(*dense.Layer)
+		if !ok || dl == nil || dl.Weights == nil {
+			continue
+		}
+		if dl.Weights.DType != core.DTypeFloat32 && dl.Weights.RetainsF32Master() {
+			return fmt.Errorf("retained f32 master after train dtype=%s", dl.Weights.DType)
+		}
+	}
+	return nil
 }
 
 func trainBatch[T core.Numeric](batch, in, out int) (x, y *core.Tensor[T]) {

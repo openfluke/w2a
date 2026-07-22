@@ -7,9 +7,12 @@ import (
 	"strings"
 
 	"github.com/openfluke/w2a/suites"
+	"github.com/openfluke/welvet/architecture"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/quant"
+	"github.com/openfluke/welvet/runtime/forward"
+	"github.com/openfluke/welvet/runtime/training"
 	"github.com/openfluke/welvet/simd"
 	"github.com/openfluke/welvet/webgpu"
 )
@@ -24,6 +27,7 @@ func Cases() []Case {
 		{Name: "Forward CPU tiled (identity + bias) [float32 acts]", Run: forwardCPUTiledIdentityBias},
 		{Name: "Forward CPU tiled [float64 acts]", Run: forwardCPUTiledF64},
 		{Name: "Numeric acts — float64/int8/uint16 on CPU+SIMD (not f32-only)", Run: multiNumericActs},
+		{Name: "Numeric TRAIN — act Tensor[T] × matching weight dtype (native SGD, no f32 master)", Run: multiNumericTrain},
 		{Name: "Backward CPU tiled (dW spot-check)", Run: backwardFiniteDiff},
 		{Name: "Grad verify — CPU vs SIMD agreement + finite-diff dW", Run: gradVerifyBackends},
 		{Name: "SIMD Plan 9 DotTile (FP32 + ReLU)", Run: simdDispatch},
@@ -202,6 +206,72 @@ func smokeNumeric[T core.Numeric](dt core.DType, format quant.Format, backend co
 	}
 	_, _, err = dense.Backward(l, gOut, x, pre)
 	return err
+}
+
+func multiNumericTrain() error {
+	type run struct {
+		name string
+		fn   func() error
+	}
+	cases := []run{
+		{"float64", func() error { return smokeNumericTrain[float64](core.DTypeFloat64) }},
+		{"float32", func() error { return smokeNumericTrain[float32](core.DTypeFloat32) }},
+		{"int8", func() error { return smokeNumericTrain[int8](core.DTypeInt8) }},
+		{"int16", func() error { return smokeNumericTrain[int16](core.DTypeInt16) }},
+		{"int32", func() error { return smokeNumericTrain[int32](core.DTypeInt32) }},
+		{"uint8", func() error { return smokeNumericTrain[uint8](core.DTypeUint8) }},
+		{"uint16", func() error { return smokeNumericTrain[uint16](core.DTypeUint16) }},
+		{"complex64", func() error { return smokeNumericTrain[complex64](core.DTypeComplex64) }},
+		{"complex128", func() error { return smokeNumericTrain[complex128](core.DTypeComplex128) }},
+	}
+	var fails []string
+	for _, c := range cases {
+		if err := c.fn(); err != nil {
+			fails = append(fails, fmt.Sprintf("%s: %v", c.name, err))
+		}
+	}
+	fmt.Printf("(%d act×weight train paths) ", len(cases))
+	if len(fails) > 0 {
+		return fmt.Errorf("%s", strings.Join(fails, " | "))
+	}
+	return nil
+}
+
+func smokeNumericTrain[T core.Numeric](dt core.DType) error {
+	const in, out, batch = 16, 8, 2
+	g := architecture.NewGrid(1, 1, 1, 1)
+	g.Exec.Backend = core.BackendCPUTiled
+	init := make([]T, out*in)
+	for i := range init {
+		init[i] = core.FromFloat64[T](float64((i%7)-3) * 0.15)
+	}
+	l, err := dense.NewConfigured(in, out, core.ActivationLinear, dt, quant.FormatNone, init)
+	if err != nil {
+		return err
+	}
+	l.Exec.Backend = core.BackendCPUTiled
+	if err := dense.Place(g, 0, 0, 0, 0, l); err != nil {
+		return err
+	}
+	x, y := trainBatch[T](batch, in, out)
+	fwd, err := forward.Forward(g, x)
+	if err != nil {
+		return fmt.Errorf("forward: %w", err)
+	}
+	loss, err := training.Step(fwd, y, 1e-2)
+	if err != nil {
+		return fmt.Errorf("step: %w", err)
+	}
+	if math.IsNaN(loss) || math.IsInf(loss, 0) {
+		return fmt.Errorf("non-finite loss %g", loss)
+	}
+	if dt != core.DTypeFloat32 && l.Weights.RetainsF32Master() {
+		return fmt.Errorf("%s retained f32 master after train", dt)
+	}
+	if dt != core.DTypeFloat32 && len(l.Weights.Native) == 0 {
+		return fmt.Errorf("%s empty Native after train", dt)
+	}
+	return nil
 }
 
 func backwardFiniteDiff() error {

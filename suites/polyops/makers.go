@@ -348,19 +348,45 @@ func onesF(n int) []float32 {
 
 // MakeIO builds float32 input/target for tween on a Kind.
 func MakeIO(k Kind, scale float64) (x, target *core.Tensor[float32]) {
-	x = core.NewTensor[float32](k.InputShape...)
-	target = core.NewTensor[float32](k.TargetShape...)
-	if k.FillInput != nil {
-		k.FillInput(x)
+	return MakeIOT[float32](k, scale)
+}
+
+// MakeIOT builds activation/target tensors in any Numeric host type.
+// Weight DType is independent — use Kind.Make(dt, …) separately.
+// Embedding inputs are integer token ids (via FromFloat64).
+func MakeIOT[T core.Numeric](k Kind, scale float64) (x, target *core.Tensor[T]) {
+	x = core.NewTensor[T](k.InputShape...)
+	target = core.NewTensor[T](k.TargetShape...)
+	if k.Name == "embedding" {
+		for i := range x.Data {
+			x.Data[i] = core.FromFloat64[T](float64(i % 64))
+		}
+	} else if k.FillInput != nil {
+		// Legacy float32 filler → cast into T.
+		tmp := core.NewTensor[float32](k.InputShape...)
+		k.FillInput(tmp)
+		for i := range x.Data {
+			x.Data[i] = core.FromFloat64[T](float64(tmp.Data[i]))
+		}
 	} else {
 		for i := range x.Data {
-			x.Data[i] = float32((i%7)+1) * 0.1
+			x.Data[i] = core.FromFloat64[T](float64((i%7)+1) * 0.1)
 		}
 	}
 	for i := range target.Data {
-		target.Data[i] = float32(float64((i%7)+1)*0.1*scale)
+		target.Data[i] = core.FromFloat64[T](float64((i%7)+1) * 0.1 * scale)
 	}
 	return x, target
+}
+
+// ActHost names every Go Numeric that can back Tensor[T] activations.
+func ActHosts() []string {
+	return []string{
+		"float64", "float32",
+		"complex128", "complex64",
+		"int64", "int32", "int16", "int8", "int",
+		"uint64", "uint32", "uint16", "uint8", "uint", "uintptr",
+	}
 }
 
 // Summary formats ok/gap/fail counts.

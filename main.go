@@ -10,6 +10,7 @@ import (
 	"github.com/openfluke/w2a/suites"
 	denssuite "github.com/openfluke/w2a/suites/dense"
 	dnasuite "github.com/openfluke/w2a/suites/dna"
+	weightssuite "github.com/openfluke/w2a/suites/weights"
 	mhasuite "github.com/openfluke/w2a/suites/mha"
 	lnsuite "github.com/openfluke/w2a/suites/layernorm"
 	cnn1suite "github.com/openfluke/w2a/suites/cnn1"
@@ -58,6 +59,12 @@ func main() {
 			Desc: "34 dtypes, timed matrix, gap census (see welvet README)",
 			Run:  denssuite.RunAll,
 			Menu: denseSubmenu,
+		},
+		{
+			Name: "Weights",
+			Desc: "native ApplySGD — FormatNone × all dtypes, no retained f32 scratch",
+			Run:  weightssuite.RunAll,
+			Menu: weightsSubmenu,
 		},
 		{
 			Name: "MHA",
@@ -349,6 +356,55 @@ func denseSubmenu() {
 		fmt.Println()
 		_ = withSuiteLog(func() error {
 			if err := denssuite.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
+	}
+}
+
+func weightsSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := weightssuite.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("Weights suite")
+		fmt.Println("  [0] Run ALL weights cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := weightssuite.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ Weights: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := weightssuite.RunOne(n); err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return err
 			}

@@ -31,6 +31,8 @@ func Cases() []Case {
 		{Name: "MATRIX — FormatNone × all 34 dtypes × all layers × CPU/SIMD", Run: MatrixFormatNoneAllDTypes},
 		{Name: "MATRIX — all quants × Float32 × all layers × CPU/SIMD", Run: MatrixAllQuantsFloat32},
 		{Name: "FULL CENSUS — all layers × all dtypes × all quants × CPU/SIMD", Run: FullMatrixCensus},
+		{Name: "CROSS-NUMERIC TRAIN smoke — all kinds × sample W×A (acts not f32-only)", Run: CrossNumericTrainSmoke},
+		{Name: "CROSS-NUMERIC TRAIN full — all kinds × 34 dtypes × 15 act hosts", Run: CrossNumericTrainFull},
 	}
 }
 

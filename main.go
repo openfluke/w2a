@@ -228,8 +228,9 @@ func main() {
 		},
 		{
 			Name: "Serialization",
-			Desc: "JSON+ENTITY all Ops; native dtype×quant storage truth (no QAT)",
+			Desc: "JSON+ENTITY; dtype×quant create/KB/train/reload + convert permutations",
 			Run:  serializationsuite.RunAll,
+			Menu: serializationSubmenu,
 		},
 		{
 			Name: "Helpers",
@@ -1181,6 +1182,55 @@ func stepSubmenu() {
 		fmt.Println()
 		_ = withSuiteLog(func() error {
 			if err := stepsuite.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
+	}
+}
+
+func serializationSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := serializationsuite.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("Serialization suite")
+		fmt.Println("  [0] Run ALL serialization cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := serializationsuite.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ Serialization: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := serializationsuite.RunOne(n); err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return err
 			}

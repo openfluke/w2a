@@ -23,6 +23,19 @@ import (
 	"github.com/openfluke/welvet/weights"
 )
 
+func recDense(op, dt, format, status, note string) {
+	suites.RecordCell(suites.Cell{
+		Layer:   "dense",
+		Op:      op,
+		DType:   dt,
+		Format:  format,
+		Backend: "cpu_tiled",
+		Grid:    "1x1x1x1",
+		Status:  status,
+		Note:    note,
+	})
+}
+
 type Case struct {
 	Name string
 	Run  func() error
@@ -37,6 +50,8 @@ func Cases() []Case {
 		{Name: "Multi-layer Ops JSON round-trip", Run: multiLayerJSON},
 		{Name: "ENTITY Save/Load Dense + forward", Run: entityDense},
 		{Name: "ENTITY multi-layer bit-stable", Run: entityMulti},
+		{Name: "ALL layers × dtype/quant — create, KB sizes, train, JSON+ENTITY reload", Run: createSizeTrainReload},
+		{Name: "ALL layers × convert permutations — KB sizes + native save/reload", Run: convertAllPermutations},
 	}
 }
 
@@ -93,6 +108,7 @@ func makeDenseGrid(dt core.DType, format quant.Format) (*architecture.Grid, erro
 func roundTripDense() error {
 	g, err := makeDenseGrid(core.DTypeFloat32, quant.FormatNone)
 	if err != nil {
+		recDense("json_rt", "float32", "none", "FAIL", err.Error())
 		return err
 	}
 	x := core.NewTensor[float32](1, 4)
@@ -101,25 +117,31 @@ func roundTripDense() error {
 	}
 	fwd1, err := forward.Forward(g, x)
 	if err != nil {
+		recDense("json_rt", "float32", "none", "FAIL", err.Error())
 		return err
 	}
 	raw, err := serialization.SerializeGrid(g)
 	if err != nil {
+		recDense("json_rt", "float32", "none", "FAIL", err.Error())
 		return err
 	}
 	g2, err := serialization.DeserializeGrid(raw)
 	if err != nil {
+		recDense("json_rt", "float32", "none", "FAIL", err.Error())
 		return err
 	}
 	fwd2, err := forward.Forward(g2, x)
 	if err != nil {
+		recDense("json_rt", "float32", "none", "FAIL", err.Error())
 		return err
 	}
 	for i := range fwd1.Output.Data {
 		if fwd1.Output.Data[i] != fwd2.Output.Data[i] {
+			recDense("json_rt", "float32", "none", "FAIL", "forward mismatch")
 			return fmt.Errorf("forward mismatch at %d", i)
 		}
 	}
+	recDense("json_rt", "float32", "none", "OK", "serialize/deserialize forward match")
 	return nil
 }
 
@@ -128,15 +150,19 @@ func nativeStable() error {
 	a := serialization.EncodeF32LE(w)
 	b := serialization.EncodeNativeWeightsRaw(w)
 	if string(a) != string(b) {
+		recDense("native_enc", "float32", "none", "FAIL", "encode mismatch")
 		return fmt.Errorf("encode mismatch")
 	}
 	got, err := serialization.DecodeNativeF32(a, 4)
 	if err != nil {
+		recDense("native_enc", "float32", "none", "FAIL", err.Error())
 		return err
 	}
 	if !serialization.NativeWeightsEqual(w, got) {
+		recDense("native_enc", "float32", "none", "FAIL", "decode mismatch")
 		return fmt.Errorf("decode mismatch")
 	}
+	recDense("native_enc", "float32", "none", "OK", "encode/decode stable")
 	return nil
 }
 
@@ -165,21 +191,26 @@ func allDTypesNative() error {
 	for _, dt := range core.AllDTypes {
 		g, err := makeDenseGrid(dt, quant.FormatNone)
 		if err != nil {
+			recDense("json_dtype", dt.String(), "none", "FAIL", err.Error())
 			return fmt.Errorf("%s: %w", dt, err)
 		}
 		raw, err := serialization.SerializeGrid(g)
 		if err != nil {
+			recDense("json_dtype", dt.String(), "none", "FAIL", err.Error())
 			return fmt.Errorf("%s serialize: %w", dt, err)
 		}
 		g2, err := serialization.DeserializeGrid(raw)
 		if err != nil {
+			recDense("json_dtype", dt.String(), "none", "FAIL", err.Error())
 			return fmt.Errorf("%s deserialize: %w", dt, err)
 		}
 		c1 := g.At(0, 0, 0, 0).Op.(*dense.Layer)
 		c2 := g2.At(0, 0, 0, 0).Op.(*dense.Layer)
 		if err := snapshotEqual(c1.Weights, c2.Weights); err != nil {
+			recDense("json_dtype", dt.String(), "none", "FAIL", err.Error())
 			return fmt.Errorf("%s: %w", dt, err)
 		}
+		recDense("json_dtype", dt.String(), "none", "OK", "bit-stable JSON")
 	}
 	fmt.Printf("(%d dtypes) ", len(core.AllDTypes))
 	return nil
@@ -194,22 +225,27 @@ func allQuantsNative() error {
 		g, err := makeDenseGrid(core.DTypeFloat32, f)
 		if err != nil {
 			gap++
+			recDense("json_quant", "float32", f.String(), "GAP", err.Error())
 			continue
 		}
 		raw, err := serialization.SerializeGrid(g)
 		if err != nil {
+			recDense("json_quant", "float32", f.String(), "FAIL", err.Error())
 			return fmt.Errorf("%s serialize: %w", f, err)
 		}
 		g2, err := serialization.DeserializeGrid(raw)
 		if err != nil {
+			recDense("json_quant", "float32", f.String(), "FAIL", err.Error())
 			return fmt.Errorf("%s deserialize: %w", f, err)
 		}
 		c1 := g.At(0, 0, 0, 0).Op.(*dense.Layer)
 		c2 := g2.At(0, 0, 0, 0).Op.(*dense.Layer)
 		if err := snapshotEqual(c1.Weights, c2.Weights); err != nil {
+			recDense("json_quant", "float32", f.String(), "FAIL", err.Error())
 			return fmt.Errorf("%s: %w", f, err)
 		}
 		ok++
+		recDense("json_quant", "float32", f.String(), "OK", "bit-stable JSON")
 	}
 	fmt.Printf("(%d ok, %d gap) ", ok, gap)
 	return nil
@@ -272,14 +308,17 @@ func multiLayerJSON() error {
 		return err
 	}
 	if string(raw) != string(raw2) {
+		suites.RecordCell(suites.Cell{Layer: "multi", Op: "json_rt", Status: "FAIL", Note: "not bit-stable", Backend: "cpu_tiled"})
 		return fmt.Errorf("JSON not bit-stable after reload")
 	}
+	suites.RecordCell(suites.Cell{Layer: "multi", Op: "json_rt", Status: "OK", Note: "multi-layer JSON bit-stable", Backend: "cpu_tiled", Grid: "1x1x1x6"})
 	return nil
 }
 
 func entityDense() error {
 	g, err := makeDenseGrid(core.DTypeFloat32, quant.FormatNone)
 	if err != nil {
+		recDense("entity_rt", "float32", "none", "FAIL", err.Error())
 		return err
 	}
 	dir, err := os.MkdirTemp("", "welvet-entity-*")
@@ -289,10 +328,12 @@ func entityDense() error {
 	defer os.RemoveAll(dir)
 	path := filepath.Join(dir, "net.entity")
 	if err := serialization.SaveEntity(path, g); err != nil {
+		recDense("entity_rt", "float32", "none", "FAIL", err.Error())
 		return err
 	}
 	g2, err := serialization.LoadEntity(path)
 	if err != nil {
+		recDense("entity_rt", "float32", "none", "FAIL", err.Error())
 		return err
 	}
 	x := core.NewTensor[float32](1, 4)
@@ -301,17 +342,21 @@ func entityDense() error {
 	}
 	fwd1, err := forward.Forward(g, x)
 	if err != nil {
+		recDense("entity_rt", "float32", "none", "FAIL", err.Error())
 		return err
 	}
 	fwd2, err := forward.Forward(g2, x)
 	if err != nil {
+		recDense("entity_rt", "float32", "none", "FAIL", err.Error())
 		return err
 	}
 	for i := range fwd1.Output.Data {
 		if fwd1.Output.Data[i] != fwd2.Output.Data[i] {
+			recDense("entity_rt", "float32", "none", "FAIL", "forward mismatch")
 			return fmt.Errorf("entity forward mismatch at %d", i)
 		}
 	}
+	recDense("entity_rt", "float32", "none", "OK", "entity save/load forward match")
 	return nil
 }
 
@@ -345,19 +390,24 @@ func entityMulti() error {
 	}
 	wire, err := serialization.SerializeEntity(g)
 	if err != nil {
+		suites.RecordCell(suites.Cell{Layer: "multi", Op: "entity_rt", Status: "FAIL", Note: err.Error(), Backend: "cpu_tiled"})
 		return err
 	}
 	g2, err := serialization.DeserializeEntity(wire)
 	if err != nil {
+		suites.RecordCell(suites.Cell{Layer: "multi", Op: "entity_rt", Status: "FAIL", Note: err.Error(), Backend: "cpu_tiled"})
 		return err
 	}
 	wire2, err := serialization.SerializeEntity(g2)
 	if err != nil {
+		suites.RecordCell(suites.Cell{Layer: "multi", Op: "entity_rt", Status: "FAIL", Note: err.Error(), Backend: "cpu_tiled"})
 		return err
 	}
 	if string(wire) != string(wire2) {
+		suites.RecordCell(suites.Cell{Layer: "multi", Op: "entity_rt", Status: "FAIL", Note: "not bit-stable", Backend: "cpu_tiled"})
 		return fmt.Errorf("ENTITY not bit-stable after reload")
 	}
+	suites.RecordCell(suites.Cell{Layer: "multi", Op: "entity_rt", Status: "OK", Note: "multi-layer ENTITY bit-stable", Backend: "cpu_tiled", Grid: "1x1x1x3"})
 	return nil
 }
 

@@ -35,6 +35,12 @@ func Cases() []Case {
 		{Name: "GAP CENSUS — full matrix (prints gaps; always PASS until v1 gate)", Run: fullMatrixGaps},
 		{Name: "TRAIN volumetric — FormatNone × ALL 34 dtypes × CPU/SIMD/WebGPU × 1³/2³/3³", Run: TimedTrainGridsFormatNone},
 		{Name: "TRAIN volumetric — ALL 20 quants × CPU/SIMD/WebGPU × 1³/2³/3³", Run: TimedTrainGridsQuant},
+		{Name: "POLY ops — every major layer kind as Parallel branch (fwd+bwd)", Run: PolyOpsSmoke},
+		{Name: "POLY matrix — Dense/MHA/SwiGLU/RMSNorm × dtypes/quants", Run: PolyDTypeMatrix},
+		{Name: "POLY TRAIN — all layer kinds × all 34 dtypes (weight-delta)", Run: PolyTrainAllKindsDTypes},
+		{Name: "NESTED — Parallel of Parallel", Run: NestedParallelSmoke},
+		{Name: "NESTED — Parallel of Sequential Dense stack", Run: NestedSequentialSmoke},
+		{Name: "NESTED TRAIN — depth/combine nests with weight-delta", Run: NestedTrainWeightDelta},
 	}
 }
 
@@ -218,7 +224,11 @@ func backwardFiniteDiff() error {
 	if err != nil {
 		return err
 	}
-	master, ok := l.Branches[0].Weights.MasterF32()
+	b0, ok := l.DenseBranch(0)
+	if !ok || b0.Weights == nil {
+		return fmt.Errorf("no Dense branch 0")
+	}
+	master, ok := b0.Weights.MasterF32()
 	if !ok || len(master) == 0 {
 		return fmt.Errorf("no MasterF32")
 	}

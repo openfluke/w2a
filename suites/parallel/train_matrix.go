@@ -145,8 +145,8 @@ func buildParallelCube(n int, be core.Backend, dt core.DType, format quant.Forma
 				if err != nil {
 					return nil, err
 				}
-				if len(l.Branches) > 0 {
-					if w, ok := l.Branches[0].Weights.MasterF32(); ok && len(w) > 0 {
+				if b0, ok := l.DenseBranch(0); ok && b0.Weights != nil {
+					if w, ok := b0.Weights.MasterF32(); ok && len(w) > 0 {
 						w[0] += float32(z+y+x) * 0.001
 					}
 				}

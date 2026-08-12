@@ -41,6 +41,17 @@ func Cases() []Case {
 		{Name: "NESTED — Parallel of Parallel", Run: NestedParallelSmoke},
 		{Name: "NESTED — Parallel of Sequential Dense stack", Run: NestedSequentialSmoke},
 		{Name: "NESTED TRAIN — depth/combine nests with weight-delta", Run: NestedTrainWeightDelta},
+		{Name: "CAMERAL — Bicameral sandwich fwd+bwd+SGD", Run: CameralBicameralSmoke},
+		{Name: "CAMERAL — nested Stack-in-Parallel", Run: CameralNestedStackInParallel},
+		{Name: "CAMERAL — Hemispheres(n=3) Sandwich", Run: CameralHemispheresN},
+		{Name: "CAMERAL TRAIN — all 9 test41 modes + mixed hemispheres + grid", Run: CameralTrainModes},
+		{Name: "CAMERAL POLY — all layer kinds as hemispheres × all train modes", Run: CameralPolyAllKinds},
+		{Name: "CAMERAL MIXED — hemi3/9 distinct per-hemi train modes (Dense smoke)", Run: CameralMixedHemiNSmoke},
+		{Name: "CAMERAL MIXED — Dense hemi9 distinct modes × all 34 dtypes", Run: CameralDenseMixedModesAllDTypes},
+		{Name: "CAMERAL POLY MIXED — all kinds × hemi3/9 distinct modes (float32)", Run: CameralPolyMixedModesAllKinds},
+		{Name: "CAMERAL POLY MIXED — all kinds × hemi9 distinct modes × all 34 dtypes", Run: CameralPolyMixedModesAllKindsDTypes},
+		{Name: "CAMERAL PERM — FormatNone × dtypes × backends × modes × arches", Run: CameralPermMatrixFormatNone},
+		{Name: "CAMERAL PERM — quants × backends × modes × arches (Float32)", Run: CameralPermMatrixQuant},
 	}
 }
 

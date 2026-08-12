@@ -8,8 +8,11 @@ import (
 	"github.com/openfluke/welvet/layers/cnn2"
 	"github.com/openfluke/welvet/layers/cnn3"
 	"github.com/openfluke/welvet/layers/convt1"
+	"github.com/openfluke/welvet/layers/convt2"
+	"github.com/openfluke/welvet/layers/convt3"
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/layers/embedding"
+	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/layernorm"
 	"github.com/openfluke/welvet/layers/lstm"
@@ -184,6 +187,32 @@ func polyKinds() []polyKind {
 			cfg := parallel.Config{Dim: 8, Branches: 2, Combine: parallel.CombineAdd}
 			return []any{a, b}, cfg, core.NewTensor[float32](batch, 4, 8), true, nil
 		}},
+		{name: "convt2", make: func() ([]any, parallel.Config, *core.Tensor[float32], bool, error) {
+			ccfg := convt2.Config{InChannels: 2, Filters: 2, Height: 4, Width: 4, Kernel: 3, Padding: 1}
+			a, err := convt2.New(ccfg)
+			if err != nil {
+				return nil, parallel.Config{}, nil, false, err
+			}
+			b, err := convt2.New(ccfg)
+			if err != nil {
+				return nil, parallel.Config{}, nil, false, err
+			}
+			cfg := parallel.Config{Dim: 4, Branches: 2, Combine: parallel.CombineAdd}
+			return []any{a, b}, cfg, core.NewTensor[float32](batch, 2, 4, 4), true, nil
+		}},
+		{name: "convt3", make: func() ([]any, parallel.Config, *core.Tensor[float32], bool, error) {
+			ccfg := convt3.Config{InChannels: 2, Filters: 2, Depth: 2, Height: 4, Width: 4, Kernel: 3, Padding: 1}
+			a, err := convt3.New(ccfg)
+			if err != nil {
+				return nil, parallel.Config{}, nil, false, err
+			}
+			b, err := convt3.New(ccfg)
+			if err != nil {
+				return nil, parallel.Config{}, nil, false, err
+			}
+			cfg := parallel.Config{Dim: 4, Branches: 2, Combine: parallel.CombineAdd}
+			return []any{a, b}, cfg, core.NewTensor[float32](batch, 2, 2, 4, 4), true, nil
+		}},
 		{name: "rnn", make: func() ([]any, parallel.Config, *core.Tensor[float32], bool, error) {
 			rcfg := rnn.Config{InputSize: dim, HiddenSize: dim, SeqLen: seq}
 			a, err := rnn.New(rcfg)
@@ -265,6 +294,22 @@ func polyKinds() []polyKind {
 			}
 			cfg := parallel.Config{Dim: dim, OutFeat: dim, Branches: 2, Combine: parallel.CombineAdd}
 			return []any{a, b}, cfg, core.NewTensor[float32](batch, dim), true, nil
+		}},
+		{name: "gdn", make: func() ([]any, parallel.Config, *core.Tensor[float32], bool, error) {
+			gcfg := gdn.Config{
+				HiddenSize: dim, NumKeyHeads: 2, NumValueHeads: 2,
+				KeyHeadDim: 8, ValueHeadDim: 8, ConvKernel: 2, Eps: 1e-6,
+			}
+			a, err := gdn.New(gcfg)
+			if err != nil {
+				return nil, parallel.Config{}, nil, false, err
+			}
+			b, err := gdn.New(gcfg)
+			if err != nil {
+				return nil, parallel.Config{}, nil, false, err
+			}
+			cfg := parallel.Config{Dim: dim, OutFeat: dim, Branches: 2, Combine: parallel.CombineAdd, SeqLen: seq}
+			return []any{a, b}, cfg, core.NewTensor[float32](batch, seq, dim), true, nil
 		}},
 	}
 }

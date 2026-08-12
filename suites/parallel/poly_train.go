@@ -7,6 +7,7 @@ import (
 
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/dense"
+	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/layers/sequential"
 	"github.com/openfluke/welvet/quant"
@@ -127,6 +128,7 @@ func runPolyTrainCell(k polyKind, dt core.DType, format quant.Format, lr float64
 
 // seedNonZero writes a small patterned matrix (+ identity on square stores)
 // into every weights.Store under op so train smokes are not stuck at W=0.
+// Also seeds GDN quant.Blob projections (CollectStores skips those).
 func seedNonZero(op any) error {
 	for si, s := range dna.CollectStores(op) {
 		if s == nil {
@@ -151,7 +153,88 @@ func seedNonZero(op any) error {
 			return fmt.Errorf("store %d: %w", si, err)
 		}
 	}
+	return seedGDNTree(op)
+}
+
+func seedPattern(n, rows, cols int) []float32 {
+	w := make([]float32, n)
+	for i := range w {
+		w[i] = 0.05 * float32((i%7)-3)
+	}
+	if rows == cols && rows > 0 {
+		for i := 0; i < rows; i++ {
+			w[i*cols+i] = 1
+		}
+	} else if len(w) > 0 {
+		w[0] = 1
+	}
+	return w
+}
+
+func seedBlob(bp **quant.Blob) error {
+	if bp == nil || *bp == nil {
+		return nil
+	}
+	b := *bp
+	n := b.Rows * b.Cols
+	if n <= 0 {
+		return nil
+	}
+	nb, err := quant.Pack(b.Format, seedPattern(n, b.Rows, b.Cols), b.Rows, b.Cols)
+	if err != nil {
+		return err
+	}
+	*bp = nb
 	return nil
+}
+
+func seedGDNTree(op any) error {
+	switch v := op.(type) {
+	case *gdn.Layer:
+		if v == nil {
+			return nil
+		}
+		for _, bp := range []**quant.Blob{&v.InQKV, &v.InZ, &v.InB, &v.InA, &v.Out} {
+			if err := seedBlob(bp); err != nil {
+				return err
+			}
+		}
+		for i := range v.ConvWeight {
+			v.ConvWeight[i] = 0.05 * float32((i%7)-3)
+		}
+		if len(v.ConvWeight) > 0 {
+			v.ConvWeight[0] = 1
+		}
+		for i := range v.ALog {
+			v.ALog[i] = -1 + 0.01*float32(i)
+		}
+		for i := range v.DtBias {
+			v.DtBias[i] = 0.01 * float32(i+1)
+		}
+		return nil
+	case *parallel.Layer:
+		if v == nil {
+			return nil
+		}
+		for _, ch := range v.Branches {
+			if err := seedGDNTree(ch); err != nil {
+				return err
+			}
+		}
+		return nil
+	case *parallel.Stack:
+		if v == nil {
+			return nil
+		}
+		for _, ch := range v.Children {
+			if err := seedGDNTree(ch); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return nil
+	}
 }
 
 func weightDelta(before, after []float32) (changed int, maxAbs float64) {
@@ -191,6 +274,12 @@ func NestedTrainWeightDelta() error {
 		}},
 		{name: "parallel_concat_inner_add", run: func() (string, string) {
 			return trainNestedLayer(buildMixedCombineNest, lr)
+		}},
+		{name: "bicameral_stack", run: func() (string, string) {
+			return trainNestedStack(buildBicameralStack, lr)
+		}},
+		{name: "stack_in_parallel", run: func() (string, string) {
+			return trainNestedStack(buildStackInParallelCameral, lr)
 		}},
 	}
 	var fails []string
@@ -361,4 +450,86 @@ func buildMixedCombineNest() (*parallel.Layer, *core.Tensor[float32], error) {
 		Dim: dim, OutFeat: dim, Branches: 2, Combine: parallel.CombineConcat,
 	}, []any{i0, i1}, nil)
 	return outer, core.NewTensor[float32](batch, dim), err
+}
+
+func trainNestedStack(build func() (*parallel.Stack, *core.Tensor[float32], error), lr float64) (status, note string) {
+	s, x, err := build()
+	if err != nil {
+		return "FAIL", err.Error()
+	}
+	s.Exec.Backend = core.BackendCPUTiled
+	s.SyncChildExec()
+	if err := seedNonZero(s); err != nil {
+		return "FAIL", "seed: " + err.Error()
+	}
+	fillOnes(x)
+	before, err := dna.FlattenOp(s)
+	if err != nil {
+		return "FAIL", "snapshot: " + err.Error()
+	}
+	pre, post, err := parallel.ForwardStack(s, x)
+	if err != nil {
+		return "FAIL", "fwd: " + err.Error()
+	}
+	gy := core.NewTensor[float32](post.Shape...)
+	for i := range gy.Data {
+		gy.Data[i] = 1
+	}
+	_, dW, err := parallel.BackwardStack(s, gy, x, pre)
+	if err != nil {
+		return "FAIL", "bwd: " + err.Error()
+	}
+	if err := parallel.ApplyGradSGDStack(s, dW, lr); err != nil {
+		return "FAIL", "sgd: " + err.Error()
+	}
+	after, err := dna.FlattenOp(s)
+	if err != nil {
+		return "FAIL", "snapshot after: " + err.Error()
+	}
+	delta, maxAbs := weightDelta(before, after)
+	if delta == 0 {
+		return "FAIL", "weights unchanged after cameral SGD"
+	}
+	return "OK", fmt.Sprintf("Δelems=%d max|Δ|=%.6g", delta, maxAbs)
+}
+
+func buildBicameralStack() (*parallel.Stack, *core.Tensor[float32], error) {
+	const in, hidden, out, batch = 10, 32, 1, 2
+	s, err := parallel.Bicameral(in, hidden, out, core.ActivationLeakyReLU, core.DTypeFloat32, quant.FormatNone)
+	return s, core.NewTensor[float32](batch, in), err
+}
+
+func buildStackInParallelCameral() (*parallel.Stack, *core.Tensor[float32], error) {
+	const dim, batch = 16, 2
+	mk := func() (*parallel.Stack, error) {
+		a, err := dense.New(dim, dim, core.ActivationLinear, core.DTypeFloat32)
+		if err != nil {
+			return nil, err
+		}
+		b, err := dense.New(dim, dim, core.ActivationLinear, core.DTypeFloat32)
+		if err != nil {
+			return nil, err
+		}
+		hemi, err := parallel.Hemispheres(dim, dim, 2, parallel.CombineAdd, core.ActivationLinear, core.DTypeFloat32, quant.FormatNone)
+		if err != nil {
+			return nil, err
+		}
+		return parallel.NewStack(a, hemi, b)
+	}
+	left, err := mk()
+	if err != nil {
+		return nil, nil, err
+	}
+	right, err := mk()
+	if err != nil {
+		return nil, nil, err
+	}
+	outer, err := parallel.HemispheresFrom(parallel.Config{
+		Dim: dim, OutFeat: dim, Branches: 2, Combine: parallel.CombineAvg,
+	}, []any{left, right}, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	root, err := parallel.Sandwich(outer)
+	return root, core.NewTensor[float32](batch, dim), err
 }

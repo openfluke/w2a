@@ -8,8 +8,8 @@ import (
 
 	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/core"
-	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/layers/residual"
+	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/simd"
 	"github.com/openfluke/welvet/webgpu"
 )
@@ -35,6 +35,7 @@ func Cases() []Case {
 		{Name: "GAP CENSUS — full matrix (prints gaps; always PASS until v1 gate)", Run: fullMatrixGaps},
 		{Name: "TRAIN volumetric — FormatNone × ALL 34 dtypes × CPU/SIMD/WebGPU × 1³/2³/3³", Run: TimedTrainGridsFormatNone},
 		{Name: "TRAIN volumetric — ALL 20 quants × CPU/SIMD/WebGPU × 1³/2³/3³", Run: TimedTrainGridsQuant},
+		{Name: "MIXED — RMSNorm+SwiGLU F fwd+bwd+SGD", Run: mixedNonDenseF},
 	}
 }
 

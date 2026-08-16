@@ -32,7 +32,21 @@ func cameralArches() []cameralArch {
 }
 
 func cameralModes() []parallel.TrainMode {
-	return parallel.AllConcreteTrainModes()
+	seen := map[parallel.TrainMode]struct{}{}
+	var out []parallel.TrainMode
+	add := func(modes []parallel.TrainMode) {
+		for _, m := range modes {
+			if _, ok := seen[m]; ok {
+				continue
+			}
+			seen[m] = struct{}{}
+			out = append(out, m)
+		}
+	}
+	add(parallel.AllConcreteTrainModes())
+	add(parallel.AllCreditTrainModes())
+	add(parallel.AllMeshCreditTrainModes())
+	return out
 }
 
 func cameralBackends() []core.Backend {

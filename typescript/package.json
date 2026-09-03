@@ -17,12 +17,20 @@
     "tanhi",
     "train-modes",
     "neural-network",
+    "machine-learning",
     "webassembly",
     "wasm",
     "webgpu",
     "typescript",
+    "javascript",
     "bun",
-    "browser"
+    "browser",
+    "nodejs",
+    "isomorphic",
+    "entity",
+    "quantization",
+    "dna",
+    "neat"
   ],
   "license": "Apache-2.0",
   "repository": {
@@ -45,10 +53,12 @@
     "build": "tsc -p tsconfig.json",
     "build:wasm": "bash ../wasm/build.sh",
     "build:all": "npm run build:wasm && npm run build",
-    "postbuild": "shx cp -r assets/* dist/ && shx mkdir -p dist/tests && shx cp -r tests/* dist/tests/ && shx cp ../wasm/*.html dist/ 2>/dev/null || true",
+    "postbuild": "shx cp -r assets/* dist/ && shx mkdir -p dist/tests && shx cp -r tests/* dist/tests/ && shx cp ../wasm/*.html dist/ 2>/dev/null || true && shx cp examples/browser.html dist/browser.html 2>/dev/null || true",
     "serve": "go run ../wasm/server/serve.go dist",
+    "example": "tsx examples/run-example-smoke.ts",
     "test": "tsx tests/smoke.ts && tsx tests/coverage.ts && tsx tests/layers.ts && tsx tests/cameral.ts && tsx tests/systems.ts && tsx tests/test_all.ts --quick",
     "test:smoke": "tsx tests/smoke.ts",
+    "test:consumer": "tsx examples/consumer_demo.ts",
     "test:coverage": "tsx tests/coverage.ts",
     "test:layers": "tsx tests/layers.ts",
     "test:cameral": "tsx tests/cameral.ts",
@@ -58,7 +68,9 @@
     "test:all": "tsx tests/test_all.ts --mega",
     "test:all:quick": "tsx tests/test_all.ts --quick",
     "test:all:mid": "tsx tests/test_all.ts --full",
-    "test:matrix": "tsx tests/test_all.ts --mega"
+    "test:matrix": "tsx tests/test_all.ts --mega",
+    "pack:check": "npm run build:all && npm pack --dry-run",
+    "publish:dry": "bash publish.sh --dry-run"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",

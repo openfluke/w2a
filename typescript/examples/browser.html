@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>@openfluke/welvet — browser quickstart</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 1.5rem; max-width: 40rem; line-height: 1.45; }
+    pre { padding: 0.75rem 1rem; background: color-mix(in oklab, Canvas 90%, CanvasText 10%); border-radius: 8px; overflow-x: auto; }
+    code { font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>@openfluke/welvet <small>1.1.1</small></h1>
+  <p>Serve the package <code>dist/</code> (or this <code>examples/</code> folder with wasm copied beside it), then open this page.</p>
+  <pre id="out">loading…</pre>
+  <script type="module">
+    const out = document.getElementById("out");
+    const log = (m) => { out.textContent += m + "\n"; };
+
+    try {
+      out.textContent = "";
+      // When served via `npm run serve` (cwd = dist), import from same origin:
+      const mod = await import("./index.js");
+      await mod.init(); // or initBrowser("./main.wasm")
+      mod.assertEngineVersion();
+      log("engine " + mod.engineVersion());
+
+      const g = mod.createGrid();
+      g.placeDense(JSON.stringify({ in: 8, out: 4, act: "relu", dtype: 1 }));
+      const fwd = g.forward(new Float32Array(8).fill(0.1));
+      if (fwd.error) throw new Error(fwd.error);
+      log("dense forward → " + Array.from(fwd.output).map((x) => x.toFixed(4)).join(", "));
+
+      const modes = mod.listNamedTrainModes();
+      const st = mod.createBicameral({ in: 4, hidden: 4, out: 4 });
+      const tr = st.trainStackMSE(
+        new Float32Array(4).fill(0.1),
+        new Float32Array([1, 0, 0, 0]),
+        modes[0],
+        0.05,
+      );
+      log("cameral " + modes[0] + " loss=" + tr.loss);
+      log("OK");
+      g.free();
+      st.free?.();
+    } catch (e) {
+      log("FAIL: " + (e?.stack || e));
+      console.error(e);
+    }
+  </script>
+</body>
+</html>

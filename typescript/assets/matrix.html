@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Welvet W2A WASM matrix</title>
+  <style>
+    :root { --bg:#0b0f14; --fg:#e8eef4; --ok:#6bcb77; --gap:#f0c674; --fail:#ff6b6b; }
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg); color: var(--fg); margin: 1.5rem; }
+    h1 { font-size: 1.2rem; }
+    #meta { opacity: .8; margin-bottom: 1rem; }
+    #log { white-space: pre-wrap; font-size: 12px; line-height: 1.35; max-height: 70vh; overflow: auto; border: 1px solid #243041; padding: 1rem; }
+    .OK { color: var(--ok); } .GAP { color: var(--gap); } .FAIL { color: var(--fail); } .SKIP { color: #8899aa; }
+    button { margin-right: .5rem; padding: .4rem .8rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Welvet 1.1.1 — full W2A suite matrix (browser)</h1>
+  <div id="meta">Serve via <code>cd apps/w2a/typescript && npm run build && npm run serve</code> then open <code>/matrix.html</code>. Same runners as <code>npm run test:all</code>.</div>
+  <div>
+    <button id="btnQuick">Run quick (~100)</button>
+    <button id="btnFull">Run mid (~900)</button>
+    <button id="btnMega">Run mega (~200k)</button>
+  </div>
+  <pre id="log">Idle.</pre>
+  <script src="./wasm_exec.js"></script>
+  <script type="module">
+    const logEl = document.getElementById("log");
+    const lines = [];
+    const log = (s) => {
+      const html = String(s)
+        .replace(/\[OK  \]/ '<span class="OK">[OK  ]</span>')
+        .replace(/\[GAP \]/ '<span class="GAP">[GAP ]</span>')
+        .replace(/\[FAIL\]/g, '<span class="FAIL">[FAIL]</span>')
+        .replace(/\[SKIP\]/g, '<span class="SKIP">[SKIP]</span>');
+      lines.push(html);
+      if (lines.length > 5000) lines.splice(0, lines.length - 4000);
+      logEl.innerHTML = lines.join("\n");
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+
+    async function bootWasm() {
+      if (!globalThis.__welvetReady) {
+        const go = new Go();
+        const buf = await (await fetch("./main.wasm")).arrayBuffer();
+        const { instance } = await WebAssembly.instantiate(buf, go.importObject);
+        go.run(instance);
+        await new Promise((r) => setTimeout(r, 80));
+        globalThis.__welvetReady = true;
+      }
+    }
+
+    async function run(profile) {
+      lines.length = 0;
+      logEl.textContent = "Loading…";
+      await bootWasm();
+      const { runAllW2ASuites } = await import("./suites/index.js");
+      try {
+        await runAllW2ASuites({ profile, log, failOnFail: false });
+        log("=== BROWSER MATRIX DONE ===");
+      } catch (e) {
+        log(String(e));
+      }
+    }
+
+    document.getElementById("btnQuick").onclick = () => run("quick");
+    document.getElementById("btnFull").onclick = () => run("full");
+    document.getElementById("btnMega").onclick = () => run("mega");
+  </script>
+</body>
+</html>

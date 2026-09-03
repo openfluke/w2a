@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Welvet WASM 1.1.1 verify</title>
+  <style>
+    body { font-family: ui-monospace, monospace; margin: 2rem; background: #0f1419; color: #e7ecf1; }
+    #log { white-space: pre-wrap; line-height: 1.4; }
+    .ok { color: #6bcb77; } .fail { color: #ff6b6b; }
+  </style>
+</head>
+<body>
+  <h1>@openfluke/welvet 1.1.1</h1>
+  <p>Browser matrix: smoke + coverage + cameral spot-check</p>
+  <div id="log">Loading…</div>
+  <script src="/dist/wasm_exec.js"></script>
+  <script type="module">
+    const log = document.getElementById("log");
+    const lines = [];
+    const say = (m, cls) => { lines.push(`<span class="${cls||""}">${m}</span>`); log.innerHTML = lines.join("\n"); };
+
+    async function boot() {
+      const go = new Go();
+      const res = await fetch("/dist/main.wasm");
+      const { instance } = await WebAssembly.instantiate(await res.arrayBuffer(), go.importObject);
+      go.run(instance);
+      await new Promise(r => setTimeout(r, 80));
+
+      const ver = welvetEngineVersion();
+      if (ver !== "1.1.1") throw new Error("version " + ver);
+      say("engine " + ver, "ok");
+
+      const g = createWelvetGrid(JSON.stringify({ depth:1, rows:1, cols:1, layers_per_cell:1 }));
+      const p = g.placeDense(JSON.stringify({ in:4, out:4, act:"relu", dtype:1 }));
+      if (p.error) throw new Error(p.error);
+      const inp = new Float32Array([0.1,0.2,0.3,0.4]);
+      const tgt = new Float32Array([0,1,0,0]);
+      const tr = g.trainSGD(inp, tgt, 0.05);
+      if (tr.error) throw new Error(tr.error);
+      say("trainSGD loss=" + tr.loss.toFixed(6), "ok");
+
+      const modes = JSON.parse(listWelvetNamedTrainModes());
+      say("named train modes=" + modes.length, "ok");
+      const st = createWelvetBicameral(JSON.stringify({ in:4, hidden:4, out:4 }));
+      const r = st.trainStackMSE(inp, tgt, modes[0], 0.05);
+      if (r.error) throw new Error(r.error);
+      say("bicameral " + modes[0] + " loss=" + r.loss, "ok");
+
+      const parity = JSON.parse(getWelvetInternalParity());
+      say("parity items=" + parity.length, "ok");
+      say("=== BROWSER OK ===", "ok");
+    }
+    boot().catch(e => say(String(e), "fail"));
+  </script>
+</body>
+</html>

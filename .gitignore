@@ -8,3 +8,6 @@ dist/
 # Suite run outputs (cleared + rewritten every test run)
 logs/
 *.log
+
+# Built WASM (regenerate with apps/w2a/wasm/build.sh)
+*.wasm

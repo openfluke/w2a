@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Welvet coverage</title>
+  <style>
+    body { font-family: ui-monospace, monospace; margin: 2rem; background: #0f1419; color: #e7ecf1; }
+    .ok { color: #6bcb77; } .fail { color: #ff6b6b; }
+  </style>
+</head>
+<body>
+  <h1>Coverage check</h1>
+  <pre id="log"></pre>
+  <script src="/dist/wasm_exec.js"></script>
+  <script type="module">
+    const log = document.getElementById("log");
+    async function boot() {
+      const go = new Go();
+      const buf = await (await fetch("/dist/main.wasm")).arrayBuffer();
+      const { instance } = await WebAssembly.instantiate(buf, go.importObject);
+      go.run(instance);
+      await new Promise(r => setTimeout(r, 50));
+      const expected = await (await fetch("/dist/expected_api.json")).json();
+      const g = createWelvetGrid(JSON.stringify({ depth:1, rows:1, cols:1, layers_per_cell:1 }));
+      let miss = 0;
+      for (const item of expected) {
+        if (item.startsWith("Grid.")) {
+          if (typeof g[item.slice(5)] !== "function") { log.textContent += "MISSING "+item+"\n"; miss++; }
+          continue;
+        }
+        if (item.startsWith("Stack.") || item.startsWith("Parallel.")) continue;
+        if (typeof globalThis[item] !== "function") { log.textContent += "MISSING "+item+"\n"; miss++; }
+      }
+      log.textContent += miss ? ("FAIL missing="+miss) : "COVERAGE OK ("+expected.length+")";
+      log.className = miss ? "fail" : "ok";
+    }
+    boot().catch(e => { log.textContent = String(e); log.className = "fail"; });
+  </script>
+</body>
+</html>

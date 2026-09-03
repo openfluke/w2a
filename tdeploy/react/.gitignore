@@ -1,0 +1,6 @@
+node_modules/
+dist/
+package-lock.json
+public/main.wasm
+public/wasm_exec.js
+*.tgz

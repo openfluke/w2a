@@ -1,0 +1,15 @@
+{
+  "name": "@openfluke/w2a-tdeploy-bun",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Bun backend smoke — @openfluke/welvet from npmjs",
+  "type": "module",
+  "scripts": {
+    "test": "bun smoke.mjs && bun cameral.mjs",
+    "test:smoke": "bun smoke.mjs",
+    "test:cameral": "bun cameral.mjs"
+  },
+  "dependencies": {
+    "@openfluke/welvet": "1.1.1"
+  }
+}

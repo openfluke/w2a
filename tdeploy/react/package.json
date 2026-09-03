@@ -1,0 +1,29 @@
+{
+  "name": "@openfluke/w2a-tdeploy-react",
+  "private": true,
+  "version": "0.0.0",
+  "description": "React (Vite) frontend smoke — @openfluke/welvet from npmjs",
+  "type": "module",
+  "scripts": {
+    "sync-wasm": "node scripts/sync-wasm.mjs",
+    "postinstall": "node scripts/sync-wasm.mjs",
+    "dev": "npm run sync-wasm && vite",
+    "build": "npm run sync-wasm && tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4178 --strictPort",
+    "test": "node scripts/browser-smoke.mjs",
+    "test:build": "npm run build"
+  },
+  "dependencies": {
+    "@openfluke/welvet": "1.1.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "puppeteer-core": "^24.2.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.0"
+  }
+}

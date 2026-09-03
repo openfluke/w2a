@@ -1,0 +1,18 @@
+{
+  "name": "@openfluke/w2a-tdeploy-node",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Node.js backend smoke — @openfluke/welvet from npmjs",
+  "type": "module",
+  "scripts": {
+    "test": "node smoke.mjs && node cameral.mjs",
+    "test:smoke": "node smoke.mjs",
+    "test:cameral": "node cameral.mjs"
+  },
+  "dependencies": {
+    "@openfluke/welvet": "1.1.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

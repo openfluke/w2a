@@ -1,0 +1,15 @@
+# binaries copied from cabi/internal/build/dist
+src/welvet/linux_*/
+src/welvet/macos_*/
+src/welvet/windows_*/
+src/welvet/android_*/
+src/welvet/ios_*/
+*.egg-info/
+__pycache__/
+.venv/
+dist/
+build/
+*.so
+*.dylib
+*.dll
+*.a

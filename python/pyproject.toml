@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "welvet"
+version = "1.1.1"
+description = "Welvet 1.1.1 AI Engine — C-ABI Python bindings: layers, dtypes, cameral TrainModes, w2a suites"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+authors = [{ name = "OpenFluke" }]
+keywords = ["welvet", "cameral", "wasm", "neural-network", "ctypes", "cabi"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Apache Software License",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/openfluke/welvet"
+Documentation = "https://github.com/openfluke/welvet/tree/main/apps/w2a/python"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+welvet = [
+  "linux_amd64/*",
+  "linux_arm64/*",
+  "macos_amd64/*",
+  "macos_arm64/*",
+  "windows_amd64/*",
+  "windows_arm64/*",
+  "android_arm64/*",
+  "android_x86_64/*",
+  "ios_arm64/*",
+]

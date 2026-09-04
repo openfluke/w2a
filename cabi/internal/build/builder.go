@@ -119,6 +119,17 @@ func selectPlatforms(goos, arch string) []Platform {
 		arch = "amd64"
 	case "aarch64":
 		arch = "arm64"
+	case "universal":
+		// lipo step only — build both slices first when requested as "universal"
+		if goos == "darwin" {
+			var out []Platform
+			for _, p := range allPlatforms {
+				if p.GOOS == "darwin" {
+					out = append(out, p)
+				}
+			}
+			return out
+		}
 	}
 	for _, p := range allPlatforms {
 		if p.GOOS == goos && p.GOARCH == arch {
@@ -155,7 +166,10 @@ func buildPlatform(p Platform, outBase string) error {
 		return fmt.Errorf("no cross-compiler for windows/%s (mingw / llvm-mingw)", p.GOARCH)
 	}
 	if p.GOOS == "android" && cc == "" {
-		return fmt.Errorf("NDK not found (set ANDROID_NDK_HOME)")
+		return fmt.Errorf("NDK not found (set ANDROID_NDK_HOME or install SDK under ~/Library/Android/sdk)")
+	}
+	if p.GOOS == "ios" && cc == "" {
+		return fmt.Errorf("iOS SDK not found (install Xcode + iphoneos SDK)")
 	}
 
 	cmd := exec.Command("go", "build", "-buildmode="+p.BuildMode, "-o", outFile, "../../")
@@ -166,8 +180,12 @@ func buildPlatform(p Platform, outBase string) error {
 	if cc != "" {
 		env = append(env, "CC="+cc)
 	}
-	if p.GOOS == "windows" && p.GOARCH == "arm64" {
-		env = append(env, "CGO_LDFLAGS=-loleaut32 -lole32 -luuid")
+	cflags, ldflags := cgoFlags(p)
+	if cflags != "" {
+		env = append(env, "CGO_CFLAGS="+cflags)
+	}
+	if ldflags != "" {
+		env = append(env, "CGO_LDFLAGS="+ldflags)
 	}
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
@@ -256,7 +274,9 @@ func buildMacUniversal(outBase string) error {
 func cleanEnv() []string {
 	out := make([]string, 0, len(os.Environ()))
 	for _, e := range os.Environ() {
-		if strings.HasPrefix(e, "CC=") || strings.HasPrefix(e, "CGO_LDFLAGS=") {
+		if strings.HasPrefix(e, "CC=") ||
+			strings.HasPrefix(e, "CGO_CFLAGS=") ||
+			strings.HasPrefix(e, "CGO_LDFLAGS=") {
 			continue
 		}
 		out = append(out, e)
@@ -273,19 +293,42 @@ func look(names ...string) string {
 	return ""
 }
 
-func ndkClang(triple string) string {
+func androidHome() string {
+	for _, k := range []string{"ANDROID_HOME", "ANDROID_SDK_ROOT"} {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+	}
+	if runtime.GOOS == "darwin" {
+		home, _ := os.UserHomeDir()
+		p := filepath.Join(home, "Library", "Android", "sdk")
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			return p
+		}
+	}
+	return ""
+}
+
+func ndkRoots() []string {
 	roots := []string{
 		os.Getenv("ANDROID_NDK_HOME"),
 		os.Getenv("ANDROID_NDK_ROOT"),
 	}
-	if h := os.Getenv("ANDROID_HOME"); h != "" {
+	if h := androidHome(); h != "" {
 		ndk := filepath.Join(h, "ndk")
 		entries, _ := os.ReadDir(ndk)
+		// Prefer newest NDK (names are version-sorted ascending).
 		for i := len(entries) - 1; i >= 0; i-- {
-			roots = append(roots, filepath.Join(ndk, entries[i].Name()))
+			if entries[i].IsDir() {
+				roots = append(roots, filepath.Join(ndk, entries[i].Name()))
+			}
 		}
 	}
-	for _, root := range roots {
+	return roots
+}
+
+func ndkClang(triple string) string {
+	for _, root := range ndkRoots() {
 		if root == "" {
 			continue
 		}
@@ -299,6 +342,36 @@ func ndkClang(triple string) string {
 		}
 	}
 	return ""
+}
+
+func iosSDKPath() string {
+	out, err := exec.Command("xcrun", "--sdk", "iphoneos", "--show-sdk-path").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// cgoFlags returns platform-specific CGO_CFLAGS / CGO_LDFLAGS.
+func cgoFlags(p Platform) (cflags, ldflags string) {
+	switch p.GOOS {
+	case "ios":
+		sdk := iosSDKPath()
+		if sdk == "" {
+			return "", ""
+		}
+		arch := "arm64"
+		if p.GOARCH == "amd64" {
+			arch = "x86_64"
+		}
+		flags := fmt.Sprintf("-isysroot %s -arch %s -miphoneos-version-min=13.0", sdk, arch)
+		return flags, flags
+	case "windows":
+		if p.GOARCH == "arm64" {
+			return "", "-loleaut32 -lole32 -luuid"
+		}
+	}
+	return "", ""
 }
 
 func crossCC(p Platform) string {
@@ -342,6 +415,9 @@ func crossCC(p Platform) string {
 		return ndkClang("x86_64-linux-android21")
 	case "ios":
 		if host == "darwin" {
+			if iosSDKPath() == "" {
+				return ""
+			}
 			return "clang"
 		}
 	}

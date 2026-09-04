@@ -40,10 +40,10 @@ fi
 
 if [[ "$TARGET_OS" == all ]]; then
 	echo "Building all platforms (soft-skip missing toolchains)..."
-	go run builder.go -os all -soft "${EXTRA_FLAGS[@]}"
+	go run builder.go -os all -soft ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"}
 else
 	echo "Building $TARGET_OS $TARGET_ARCH..."
-	go run builder.go -os "$TARGET_OS" -arch "$TARGET_ARCH" "${EXTRA_FLAGS[@]}"
+	go run builder.go -os "$TARGET_OS" -arch "$TARGET_ARCH" ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"}
 fi
 
 # Mirror to Python when dist exists

@@ -2,7 +2,7 @@
 # Auto-release openfluke/w2a for the current Welvet scorecard version.
 #
 # What it does:
-#   1. Read version from ../README.md (welvet scorecard)
+#   1. Read version from ../welvet/README.md (welvet scorecard)
 #   2. Require logs/suite.txt (+ make suite.pdf via LibreOffice if missing)
 #   3. Commit source if dirty (logs/ stay gitignored)
 #   4. Push main → origin
@@ -21,7 +21,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-WELVET_README="$(cd "$ROOT/.." && pwd)/README.md"
+WELVET_README="$(cd "$ROOT/../welvet" && pwd)/README.md"
 REPO_SLUG="openfluke/w2a"
 API="https://api.github.com/repos/${REPO_SLUG}"
 LOG_DIR="$ROOT/logs"
@@ -49,10 +49,11 @@ for arg in "$@"; do
 done
 
 read_version() {
-  python3 - <<'PY'
+  python3 - "$WELVET_README" <<'PY'
 from pathlib import Path
 import re
-text = Path("../README.md").read_text(encoding="utf-8")
+import sys
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
 earned = None
 m = re.search(r"\*\*(\d+(?:\.\d+)?)\s*/\s*100\*\*\s*pts", text)
 if m:
@@ -63,7 +64,7 @@ if earned is None:
         v = m.group(1)
         earned = 100.0 if v == "v1.0" else float(v[3:]) if v.startswith("v0.") else None
 if earned is None:
-    raise SystemExit("could not parse Welvet version from ../README.md")
+    raise SystemExit(f"could not parse Welvet version from {sys.argv[1]}")
 ver = "v1.0" if earned >= 100 else f"v0.{int(round(earned)):02d}"
 print(f"{ver} {earned}")
 PY

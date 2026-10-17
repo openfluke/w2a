@@ -15,7 +15,7 @@ Everything that *proves* or *wraps* the engine lives here. See `../README.md` fo
 ## Interactive menu (recommended)
 
 ```bash
-cd welvet/w2a
+cd w2a
 go run .
 ```
 
@@ -30,21 +30,25 @@ Suites live in `suites/<layer>/` so the menu and `go test` share the same checks
 ## Plain `go test`
 
 ```bash
-cd welvet/w2a
+cd w2a
 go test ./tests/dense/ -v          # Dense only
 go test ./tests/seven/ -v          # Lucy-[7]-style SC↔MC / det / train / ENTITY
 go test ./...                      # everything
 ```
 
 
-Local module replace: `replace github.com/openfluke/welvet => ../`
+Keep `w2a/` and `welvet/` as sibling checkouts. The local module replace is
+`replace github.com/openfluke/welvet => ../welvet`.
+Welvet's WebGPU dependency is downloaded by Go from its published module;
+no local WebGPU checkout or replacement is needed. GPU checks skip when no
+compatible device is available.
 
 ## Release
 
-Attaches current `logs/suite.txt` + `logs/suite.pdf` to a GitHub Release tagged with the Welvet scorecard version from `../README.md`.
+Attaches current `logs/suite.txt` + `logs/suite.pdf` to a GitHub Release tagged with the Welvet scorecard version from `../welvet/README.md`.
 
 ```bash
-cd welvet/w2a
+cd w2a
 go run .            # run suites → logs/suite.txt (+ export PDF if needed)
 ./release.sh        # commit source, push, upload suite txt/pdf
 ./release.sh --dry-run

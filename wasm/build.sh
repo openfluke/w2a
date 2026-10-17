@@ -8,7 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -P "$(dirname "$0")" && pwd)"
 W2A_ROOT="$(cd -P "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$W2A_ROOT/typescript/assets"
-WELVET_ROOT="$(cd -P "$W2A_ROOT/../.." && pwd)"
+WELVET_ROOT="$(cd "$W2A_ROOT" && go list -m -f '{{.Dir}}' github.com/openfluke/welvet)"
 OVERLAY_DIR="$SCRIPT_DIR/overlays"
 OVERLAY_JSON="$SCRIPT_DIR/.simd_overlay.json"
 SIMD_DIR="$WELVET_ROOT/simd"

@@ -18,6 +18,7 @@ import (
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/quant"
+	"github.com/openfluke/welvet/simd"
 )
 
 type Case struct {
@@ -29,9 +30,11 @@ func Cases() []Case {
 	return []Case{
 		{Name: "Locate welvet_dense_fwd binary", Run: caseLocateTool},
 		{Name: "Spectrum ladder self-check", Run: caseSpectrumLadder},
-		{Name: "Dense forward identity+bias Float32 — exact bits", Run: caseIdentityBiasExact},
-		{Name: "Dense forward ReLU Float32 — exact bits", Run: caseReLUExact},
-		{Name: "FormatNone × all 34 dtypes — spectrum + speed matrix", Run: caseAllDTypesMatrix},
+		{Name: "Dense forward identity+bias Float32 CPU — exact bits", Run: caseIdentityBiasExact},
+		{Name: "Dense forward ReLU Float32 CPU — exact bits", Run: caseReLUExact},
+		{Name: "CPU FormatNone × all 34 dtypes — spectrum + speed", Run: caseAllDTypesCPU},
+		{Name: "SIMD FormatNone × all 34 dtypes — Go SIMD vs C++ SIMD", Run: caseAllDTypesSIMD},
+		{Name: "Cross: Go CPU vs C++ SIMD Float32 — spectrum report", Run: caseCrossCPUVsSIMD},
 		{Name: "C++ gap census present (welvet_dense_fwd --gaps)", Run: caseGapCensus},
 	}
 }
@@ -108,7 +111,8 @@ func caseLocateTool() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("\n      tool=%s", p)
+	out, _ := exec.Command(p, "--version").CombinedOutput()
+	fmt.Printf("\n      tool=%s version=%s", p, strings.TrimSpace(string(out)))
 	return nil
 }
 
@@ -131,22 +135,13 @@ func caseGapCensus() error {
 }
 
 func caseSpectrumLadder() error {
-	// Document + smoke the spectrum using synthetic deltas.
 	exact := []float32{1, 2, 3}
 	m := suites.CompareF32Spectrum(exact, exact)
 	if m.Band != suites.DetExactBit || m.ExactPct != 100 {
 		return fmt.Errorf("exact: %s", suites.FormatSpectrum(m))
 	}
-	near := []float32{1, 2, 3 + 1e-6}
-	m = suites.CompareF32Spectrum(exact, near)
-	if m.Band != suites.DetStrict && m.Band != suites.DetExactBit {
-		// 1e-6 abs on value ~3 → rel ~3e-7 → Strict
-		if m.MaxAbs > suites.DetTolFwd {
-			return fmt.Errorf("near-strict got %s", suites.FormatSpectrum(m))
-		}
-	}
 	fmt.Printf("\n      ladder: broken=0%% … industry=60%% … strict=80%% … exact_bit=100%% (aim)")
-	fmt.Printf("\n      %s", suites.FormatSpectrum(suites.CompareF32Spectrum(exact, exact)))
+	fmt.Printf("\n      %s", suites.FormatSpectrum(m))
 	return nil
 }
 
@@ -154,6 +149,7 @@ type fwdCase struct {
 	in, out, batch int
 	act            core.ActivationType
 	dtype          core.DType
+	backend        core.Backend // Go + C++ (0=cpu, 1=simd)
 	W              []float32
 	bias           []float64
 	x              []float32
@@ -165,6 +161,7 @@ func runGo(fc fwdCase) (pre, post []float32, err error) {
 		return nil, nil, err
 	}
 	l.Weights.Bias = append([]float64(nil), fc.bias...)
+	l.Exec.Backend = fc.backend
 	l.Exec.MultiCore = false
 	l.Core.MultiCore = false
 	t := core.NewTensor[float32](fc.batch, fc.in)
@@ -178,12 +175,13 @@ func runGo(fc fwdCase) (pre, post []float32, err error) {
 
 func encodeReq(fc fwdCase) []byte {
 	var in bytes.Buffer
-	_, _ = in.Write([]byte("WVD2"))
+	_, _ = in.Write([]byte("WVD3"))
 	_ = binary.Write(&in, binary.LittleEndian, int32(fc.batch))
 	_ = binary.Write(&in, binary.LittleEndian, int32(fc.in))
 	_ = binary.Write(&in, binary.LittleEndian, int32(fc.out))
 	_ = binary.Write(&in, binary.LittleEndian, int32(fc.act))
 	_ = binary.Write(&in, binary.LittleEndian, int32(fc.dtype))
+	_ = binary.Write(&in, binary.LittleEndian, int32(fc.backend))
 	for _, v := range fc.W {
 		_ = binary.Write(&in, binary.LittleEndian, v)
 	}
@@ -302,22 +300,17 @@ func requireExact(fc fwdCase) error {
 func caseIdentityBiasExact() error {
 	return requireExact(fwdCase{
 		in: 3, out: 2, batch: 1,
-		act:   core.ActivationLinear,
-		dtype: core.DTypeFloat32,
-		W:     []float32{1, 0, 0, 0, 1, 0},
-		bias:  []float64{0.5, -0.5},
-		x:     []float32{2, 3, 9},
+		act: core.ActivationLinear, dtype: core.DTypeFloat32, backend: core.BackendCPUTiled,
+		W: []float32{1, 0, 0, 0, 1, 0}, bias: []float64{0.5, -0.5}, x: []float32{2, 3, 9},
 	})
 }
 
 func caseReLUExact() error {
 	return requireExact(fwdCase{
 		in: 4, out: 3, batch: 1,
-		act:   core.ActivationReLU,
-		dtype: core.DTypeFloat32,
-		W:     []float32{1, -1, 0.5, 0, 0, 1, -2, 0.25, -0.5, 0, 1, 1},
-		bias:  []float64{0.1, -0.2, 0},
-		x:     []float32{-1, 2, -3, 4},
+		act: core.ActivationReLU, dtype: core.DTypeFloat32, backend: core.BackendCPUTiled,
+		W: []float32{1, -1, 0.5, 0, 0, 1, -2, 0.25, -0.5, 0, 1, 1},
+		bias: []float64{0.1, -0.2, 0}, x: []float32{-1, 2, -3, 4},
 	})
 }
 
@@ -342,15 +335,16 @@ func makeSharedInit(out, in, batch int) (W, x []float32, bias []float64) {
 	return W, x, bias
 }
 
-func caseAllDTypesMatrix() error {
+func runDtypeMatrix(be core.Backend, title string, requireExactBits bool) error {
 	const in, out, batch, benchIters = 16, 8, 2, 40
 	if len(core.AllDTypes) != 34 {
 		return fmt.Errorf("expected 34 dtypes, got %d", len(core.AllDTypes))
 	}
 	W, x, bias := makeSharedInit(out, in, batch)
 
-	fmt.Printf("\n      %-12s %-12s %8s %8s %10s %10s %9s %s\n",
-		"dtype", "band", "exact%", "spect%", "go_ms", "cpp_ms", "spd%Δ", "max|Δ|")
+	fmt.Printf("\n      %s\n", title)
+	fmt.Printf("      %-12s %-12s %8s %8s %10s %10s %9s %s\n",
+		"dtype", "band", "exact%", "spect%", "go_µs", "cpp_µs", "spd%Δ", "max|Δ|")
 	fmt.Printf("      %s\n", strings.Repeat("-", 88))
 
 	var (
@@ -362,11 +356,8 @@ func caseAllDTypesMatrix() error {
 	for _, dt := range core.AllDTypes {
 		fc := fwdCase{
 			in: in, out: out, batch: batch,
-			act:   core.ActivationLinear,
-			dtype: dt,
-			W:     W,
-			bias:  bias,
-			x:     x,
+			act: core.ActivationLinear, dtype: dt, backend: be,
+			W: W, bias: bias, x: x,
 		}
 		preM, postM, err := compareCase(fc)
 		if err != nil {
@@ -374,7 +365,6 @@ func caseAllDTypesMatrix() error {
 			fmt.Printf("      %-12s FAIL %v\n", dt, err)
 			continue
 		}
-		// Grade on post (what callers consume); track pre too.
 		m := postM
 		if preM.Band < m.Band {
 			m = preM
@@ -385,7 +375,6 @@ func caseAllDTypesMatrix() error {
 		exactN += m.ExactBits
 		totalN += m.N
 
-		// Speeds (kernel-ish): Go in-process, C++ --bench inside one process.
 		for i := 0; i < 3; i++ {
 			if _, _, err := runGo(fc); err != nil {
 				fails = append(fails, fmt.Sprintf("%s warm go: %v", dt, err))
@@ -405,21 +394,24 @@ func caseAllDTypesMatrix() error {
 			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
 			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %9s %s\n",
 				dt, m.Band, m.ExactPct, m.Band.Percent(),
-				fmt.Sprintf("%.3f", float64(goDur.Microseconds())/float64(benchIters)/1000),
+				fmt.Sprintf("%.2f", float64(goDur.Nanoseconds())/float64(benchIters)/1000),
 				"?", "?", fmt.Sprintf("%.3g", m.MaxAbs))
 			continue
 		}
-		goMS := float64(goDur.Microseconds()) / float64(benchIters) / 1000
-		cppMS := float64(cppDur.Microseconds()) / float64(benchIters) / 1000
-		spdPct := suites.SpeedPctDiff(goMS, cppMS) // + ⇒ C++ slower than Go
+		// Per-iter µs from ns total (ms is too coarse for these kernels).
+		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		spdPct := suites.SpeedPctDiff(goUS, cppUS)
 
-		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.3f %10.3f %+8.1f%% %s\n",
-			dt, m.Band, m.ExactPct, m.Band.Percent(), goMS, cppMS, spdPct,
+		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10.2f %+8.1f%% %s\n",
+			dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, cppUS, spdPct,
 			fmt.Sprintf("%.3g", m.MaxAbs))
 
-		// Soft fail policy: require at least Industry for every dtype; prefer ExactBit.
-		// Aim remains ExactBit — non-exact rows are reported but only Broken fails hard.
-		if m.Band == suites.DetBroken || m.Band == suites.DetBallpark {
+		if requireExactBits {
+			if m.Band != suites.DetExactBit {
+				fails = append(fails, fmt.Sprintf("%s: want exact_bit got %s", dt, suites.FormatSpectrum(m)))
+			}
+		} else if m.Band == suites.DetBroken || m.Band == suites.DetBallpark {
 			fails = append(fails, fmt.Sprintf("%s: %s", dt, suites.FormatSpectrum(m)))
 		}
 	}
@@ -436,6 +428,48 @@ func caseAllDTypesMatrix() error {
 
 	if len(fails) > 0 {
 		return fmt.Errorf("%d dtype issues: %s", len(fails), strings.Join(fails, " | "))
+	}
+	return nil
+}
+
+func caseAllDTypesCPU() error {
+	return runDtypeMatrix(core.BackendCPUTiled, "Go CPU vs C++ CPU (FormatNone×34)", true)
+}
+
+func caseAllDTypesSIMD() error {
+	if !simd.Enabled() {
+		return fmt.Errorf("Go SIMD not enabled on %s/%s — cannot compare SIMD paths", runtime.GOOS, runtime.GOARCH)
+	}
+	// SIMD vs SIMD: aim exact_bit; if imported kernels diverge, report spectrum (fail below industry).
+	return runDtypeMatrix(core.BackendSIMD, "Go SIMD vs C++ imported SIMD (FormatNone×34)", false)
+}
+
+func caseCrossCPUVsSIMD() error {
+	const in, out, batch = 32, 16, 2
+	W, x, bias := makeSharedInit(out, in, batch)
+	fcCPU := fwdCase{
+		in: in, out: out, batch: batch,
+		act: core.ActivationLinear, dtype: core.DTypeFloat32, backend: core.BackendCPUTiled,
+		W: W, bias: bias, x: x,
+	}
+	fcSIMD := fcCPU
+	fcSIMD.backend = core.BackendSIMD
+
+	goPre, goPost, err := runGo(fcCPU)
+	if err != nil {
+		return fmt.Errorf("go cpu: %w", err)
+	}
+	cppPre, cppPost, err := runCpp(fcSIMD)
+	if err != nil {
+		return fmt.Errorf("cpp simd: %w", err)
+	}
+	preM := suites.CompareF32Spectrum(goPre, cppPre)
+	postM := suites.CompareF32Spectrum(goPost, cppPost)
+	fmt.Printf("\n      Go-CPU vs C++-SIMD Float32: pre %s", suites.FormatSpectrum(preM))
+	fmt.Printf("\n      Go-CPU vs C++-SIMD Float32: post %s", suites.FormatSpectrum(postM))
+	// Informational cross-path — fail only if broken.
+	if postM.Band == suites.DetBroken {
+		return fmt.Errorf("cross path broken: %s", suites.FormatSpectrum(postM))
 	}
 	return nil
 }

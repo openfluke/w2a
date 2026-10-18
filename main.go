@@ -9,6 +9,7 @@ import (
 
 	"github.com/openfluke/w2a/suites"
 	denssuite "github.com/openfluke/w2a/suites/dense"
+	govcpp "github.com/openfluke/w2a/suites/go_v_cpp"
 	dnasuite "github.com/openfluke/w2a/suites/dna"
 	weightssuite "github.com/openfluke/w2a/suites/weights"
 	mhasuite "github.com/openfluke/w2a/suites/mha"
@@ -54,6 +55,12 @@ type suite struct {
 
 func main() {
 	allSuites := []suite{
+		{
+			Name: "Go_v_Cpp",
+			Desc: "exact 1:1 Go Welvet vs welvet.cpp (+ speed) — needs ../welvet.cpp/build",
+			Run:  govcpp.RunAll,
+			Menu: goVCppSubmenu,
+		},
 		{
 			Name: "Dense",
 			Desc: "34 dtypes, timed matrix, gap census (see welvet README)",
@@ -310,6 +317,55 @@ func main() {
 				return err
 			}
 			fmt.Printf("✅ %s: all PASS\n", s.Name)
+			return nil
+		})
+	}
+}
+
+func goVCppSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := govcpp.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("Go_v_Cpp suite — exact output + performance (welvet.cpp)")
+		fmt.Println("  [0] Run ALL go_v_cpp cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := govcpp.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ Go_v_Cpp: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := govcpp.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
 			return nil
 		})
 	}

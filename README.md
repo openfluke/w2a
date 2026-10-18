@@ -22,10 +22,27 @@ go run .
 Then pick a number:
 
 - `[0]` run all suites  
-- `[1]` Dense → sub-menu (`0` = all dense cases, `1..n` = one case, `b` = back)  
+- `[1]` **Go_v_Cpp** → exact 1:1 Go Welvet vs `welvet.cpp` (+ timings); needs `../welvet.cpp/build/welvet_dense_fwd`  
+- `[2]` Dense → sub-menu (`0` = all dense cases, `1..n` = one case, `b` = back)  
 - `[q]` quit  
 
 Suites live in `suites/<layer>/` so the menu and `go test` share the same checks.
+
+### Go vs C++ parity
+
+```bash
+# build C++ engine first
+../welvet.cpp/scripts/build.sh
+
+cd w2a
+go test ./tests/go_v_cpp/ -v
+# or: go run .  → choose Go_v_Cpp
+# optional: WELVET_DENSE_FWD=/path/to/welvet_dense_fwd
+```
+
+Compares Dense FormatNone×**all 34 dtypes** on the Welvet **determinism spectrum**
+(`broken → ballpark → loose → industry → strict → exact_bit`, aim = **100% exact bits**),
+plus per-dtype Go vs C++ kernel timings and speed `%Δ`. See `suites/spectrum.go`.
 
 ## Plain `go test`
 

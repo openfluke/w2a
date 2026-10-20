@@ -57,7 +57,8 @@ func Cases() []Case {
 	out = append(out, CasesEmbedding()...)
 	out = append(out, CasesSoftmax()...)
 	out = append(out, CasesKMeans()...)
-	return append(out, CasesSequential()...)
+	out = append(out, CasesSequential()...)
+	return append(out, CasesResidual()...)
 }
 
 func RunAll() error {

@@ -28,7 +28,7 @@ type Case struct {
 	Run  func() error
 }
 
-func Cases() []Case {
+func CasesCore() []Case {
 	return []Case{
 		{Name: "Locate welvet_dense_fwd binary", Run: caseLocateTool},
 		{Name: "Spectrum ladder self-check", Run: caseSpectrumLadder},
@@ -43,6 +43,10 @@ func Cases() []Case {
 		{Name: "Volume Dense 3×3×3×1 × all 34 dtypes — spectrum + speed", Run: caseVolumeDense3x3x3AllDTypes},
 		{Name: "C++ gap census present (welvet_dense_fwd --gaps)", Run: caseGapCensus},
 	}
+}
+
+func Cases() []Case {
+	return append(CasesCore(), CasesMHA()...)
 }
 
 func RunAll() error {

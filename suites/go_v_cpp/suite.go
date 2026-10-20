@@ -49,7 +49,8 @@ func Cases() []Case {
 	out := append(CasesCore(), CasesMHA()...)
 	out = append(out, CasesSwiGLU()...)
 	out = append(out, CasesRMSNorm()...)
-	return append(out, CasesLayerNorm()...)
+	out = append(out, CasesLayerNorm()...)
+	return append(out, CasesCNN()...)
 }
 
 func RunAll() error {

@@ -46,7 +46,8 @@ func CasesCore() []Case {
 }
 
 func Cases() []Case {
-	return append(CasesCore(), CasesMHA()...)
+	out := append(CasesCore(), CasesMHA()...)
+	return append(out, CasesSwiGLU()...)
 }
 
 func RunAll() error {

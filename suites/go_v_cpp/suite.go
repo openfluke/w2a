@@ -60,7 +60,8 @@ func Cases() []Case {
 	out = append(out, CasesSequential()...)
 	out = append(out, CasesResidual()...)
 	out = append(out, CasesMamba()...)
-	return append(out, CasesMetacognition()...)
+	out = append(out, CasesMetacognition()...)
+	return append(out, CasesGDN()...)
 }
 
 func RunAll() error {

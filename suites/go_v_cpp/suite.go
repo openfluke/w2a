@@ -59,7 +59,8 @@ func Cases() []Case {
 	out = append(out, CasesKMeans()...)
 	out = append(out, CasesSequential()...)
 	out = append(out, CasesResidual()...)
-	return append(out, CasesMamba()...)
+	out = append(out, CasesMamba()...)
+	return append(out, CasesMetacognition()...)
 }
 
 func RunAll() error {

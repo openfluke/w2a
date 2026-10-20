@@ -51,7 +51,9 @@ func Cases() []Case {
 	out = append(out, CasesRMSNorm()...)
 	out = append(out, CasesLayerNorm()...)
 	out = append(out, CasesCNN()...)
-	return append(out, CasesConvT()...)
+	out = append(out, CasesConvT()...)
+	out = append(out, CasesRNN()...)
+	return append(out, CasesLSTM()...)
 }
 
 func RunAll() error {

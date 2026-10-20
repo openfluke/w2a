@@ -54,7 +54,8 @@ func Cases() []Case {
 	out = append(out, CasesConvT()...)
 	out = append(out, CasesRNN()...)
 	out = append(out, CasesLSTM()...)
-	return append(out, CasesEmbedding()...)
+	out = append(out, CasesEmbedding()...)
+	return append(out, CasesSoftmax()...)
 }
 
 func RunAll() error {

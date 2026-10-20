@@ -6,7 +6,7 @@ import (
 	gvc "github.com/openfluke/w2a/suites/go_v_cpp"
 )
 
-// TestGoVCpp runs the full Go↔C++ suite (dense + architecture + MHA + SwiGLU).
+// TestGoVCpp runs the full Go↔C++ suite (dense + architecture + MHA + SwiGLU + RMSNorm).
 func TestGoVCpp(t *testing.T) {
 	if err := gvc.RunAll(); err != nil {
 		t.Fatal(err)

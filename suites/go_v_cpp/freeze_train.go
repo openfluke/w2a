@@ -312,7 +312,7 @@ func encodeDenseFRB1(dtype core.DType, lr float64, children []denseStepChild, ba
 	return in.Bytes()
 }
 
-func runGoDenseFreeze(dtype core.DType, lr float64, children []denseStepChild, batch int, ticksX, ticksT [][]float32) (freezeOut, error) {
+func runGoDenseFreeze(dtype core.DType, lr float64, children []denseStepChild, batch int, ticksX, ticksT [][]float32, mode parallel.TrainMode) (freezeOut, error) {
 	var z freezeOut
 	ops := make([]any, len(children))
 	for i, ch := range children {
@@ -334,7 +334,7 @@ func runGoDenseFreeze(dtype core.DType, lr float64, children []denseStepChild, b
 		copy(xin.Data, ticksX[t])
 		tgt := core.NewTensor[float32](batch, children[len(children)-1].out)
 		copy(tgt.Data, ticksT[t])
-		loss, err = parallel.TrainStackMSE(st, xin, tgt, parallel.ModeFreeze, lr)
+		loss, err = parallel.TrainStackMSE(st, xin, tgt, mode, lr)
 		if err != nil {
 			return z, err
 		}
@@ -363,7 +363,7 @@ func caseDenseFreezeMultiHopF32() error {
 	tgt := []float32{0.2, 0.4, 0.1, 0.3}
 	ticksX := [][]float32{append([]float32(nil), x...)}
 	ticksT := [][]float32{append([]float32(nil), tgt...)}
-	goO, err := runGoDenseFreeze(core.DTypeFloat32, lr, children, batch, ticksX, ticksT)
+	goO, err := runGoDenseFreeze(core.DTypeFloat32, lr, children, batch, ticksX, ticksT, parallel.ModeFreeze)
 	if err != nil {
 		return fmt.Errorf("go: %w", err)
 	}
@@ -392,7 +392,7 @@ func caseDenseFreeze1HopAllDTypes() error {
 		tx := [][]float32{append([]float32(nil), x...)}
 		tt := [][]float32{append([]float32(nil), tgt...)}
 		t0 := time.Now()
-		goO, err := runGoDenseFreeze(dt, 1e-2, ch, batch, tx, tt)
+		goO, err := runGoDenseFreeze(dt, 1e-2, ch, batch, tx, tt, parallel.ModeFreeze)
 		goDur := time.Since(t0)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s go:%v", dt, err))
@@ -446,10 +446,10 @@ func caseRMSNormFreezeF32() error {
 }
 
 func caseRMSNormFreezeAllDTypes() error {
-	return runFreezeSpectrum("RMSNorm", buildRMSNormFreeze)
+	return runFreezeSpectrum("RMSNorm", func(dt core.DType) (freezeOut, []byte, error) { return buildRMSNormFreeze(dt, parallel.ModeFreeze) })
 }
 
-func buildRMSNormFreeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildRMSNormFreeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 
 	const batch, dim = 2, 4
 	lr := 1e-2
@@ -473,7 +473,7 @@ func buildRMSNormFreeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, dim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -496,7 +496,7 @@ func buildRMSNormFreeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runRMSNormFreeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildRMSNormFreeze(dtype)
+	goO, payload, err := buildRMSNormFreeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -512,10 +512,10 @@ func caseLayerNormFreezeF32() error {
 }
 
 func caseLayerNormFreezeAllDTypes() error {
-	return runFreezeSpectrum("LayerNorm", buildLayerNormFreeze)
+	return runFreezeSpectrum("LayerNorm", func(dt core.DType) (freezeOut, []byte, error) { return buildLayerNormFreeze(dt, parallel.ModeFreeze) })
 }
 
-func buildLayerNormFreeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildLayerNormFreeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 
 	const batch, dim = 2, 4
 	lr := 1e-2
@@ -543,7 +543,7 @@ func buildLayerNormFreeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, dim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -574,7 +574,7 @@ func buildLayerNormFreeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runLayerNormFreeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildLayerNormFreeze(dtype)
+	goO, payload, err := buildLayerNormFreeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -590,10 +590,10 @@ func caseSoftmaxFreezeF32() error {
 }
 
 func caseSoftmaxFreezeAllDTypes() error {
-	return runFreezeSpectrum("Softmax", buildSoftmaxFreeze)
+	return runFreezeSpectrum("Softmax", func(dt core.DType) (freezeOut, []byte, error) { return buildSoftmaxFreeze(dt, parallel.ModeFreeze) })
 }
 
-func buildSoftmaxFreeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildSoftmaxFreeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 
 	const batch, dim = 2, 4
 	lr := 1e-2
@@ -615,7 +615,7 @@ func buildSoftmaxFreeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, dim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -632,7 +632,7 @@ func buildSoftmaxFreeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runSoftmaxFreeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildSoftmaxFreeze(dtype)
+	goO, payload, err := buildSoftmaxFreeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -648,10 +648,10 @@ func caseSwiGLUFreezeF32() error {
 }
 
 func caseSwiGLUFreezeAllDTypes() error {
-	return runFreezeSpectrum("SwiGLU", buildSwiGLUFreeze)
+	return runFreezeSpectrum("SwiGLU", func(dt core.DType) (freezeOut, []byte, error) { return buildSwiGLUFreeze(dt, parallel.ModeFreeze) })
 }
 
-func buildSwiGLUFreeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildSwiGLUFreeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 
 	const batch, inDim, inter = 2, 4, 8
 	lr := 1e-2
@@ -683,7 +683,7 @@ func buildSwiGLUFreeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, inDim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -716,7 +716,7 @@ func buildSwiGLUFreeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runSwiGLUFreeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildSwiGLUFreeze(dtype)
+	goO, payload, err := buildSwiGLUFreeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -733,7 +733,7 @@ func caseSequentialFreezeF32() error {
 
 func caseSequentialFreezeAllDTypes() error {
 	return runFreezeSpectrum("Sequential", func(dt core.DType) (freezeOut, []byte, error) {
-		return buildSeqResFreeze(true, dt)
+		return buildSeqResFreeze(true, dt, parallel.ModeFreeze)
 	})
 }
 
@@ -743,11 +743,11 @@ func caseResidualFreezeF32() error {
 
 func caseResidualFreezeAllDTypes() error {
 	return runFreezeSpectrum("Residual", func(dt core.DType) (freezeOut, []byte, error) {
-		return buildSeqResFreeze(false, dt)
+		return buildSeqResFreeze(false, dt, parallel.ModeFreeze)
 	})
 }
 
-func buildSeqResFreeze(isSeq bool, dtype core.DType) (freezeOut, []byte, error) {
+func buildSeqResFreeze(isSeq bool, dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 
 	const batch, dim, depth, seq = 2, 4, 2, 1
 	lr := 1e-2
@@ -789,7 +789,7 @@ func buildSeqResFreeze(isSeq bool, dtype core.DType) (freezeOut, []byte, error) 
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, dim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -834,7 +834,7 @@ func buildSeqResFreeze(isSeq bool, dtype core.DType) (freezeOut, []byte, error) 
 }
 
 func runSeqResFreeze(isSeq bool, dtype core.DType, exact bool) error {
-	goO, payload, err := buildSeqResFreeze(isSeq, dtype)
+	goO, payload, err := buildSeqResFreeze(isSeq, dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -850,10 +850,10 @@ func caseMambaFreezeF32() error {
 }
 
 func caseMambaFreezeAllDTypes() error {
-	return runFreezeSpectrum("Mamba", buildMambaFreeze)
+	return runFreezeSpectrum("Mamba", func(dt core.DType) (freezeOut, []byte, error) { return buildMambaFreeze(dt, parallel.ModeFreeze) })
 }
 
-func buildMambaFreeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildMambaFreeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 
 	cfg := mamba.Config{DModel: 4, DState: 2, Expand: 2, SeqLen: 2}
 	const batch = 2
@@ -884,7 +884,7 @@ func buildMambaFreeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, cfg.SeqLen, cfg.DModel)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -911,7 +911,7 @@ func buildMambaFreeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runMambaFreeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildMambaFreeze(dtype)
+	goO, payload, err := buildMambaFreeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -924,10 +924,10 @@ func runMambaFreeze(dtype core.DType, exact bool) error {
 
 func caseEmbeddingFreezeF32() error { return runEmbeddingFreeze(core.DTypeFloat32, true) }
 func caseEmbeddingFreezeAllDTypes() error {
-	return runFreezeSpectrum("Embedding", buildEmbeddingFreeze)
+	return runFreezeSpectrum("Embedding", func(dt core.DType) (freezeOut, []byte, error) { return buildEmbeddingFreeze(dt, parallel.ModeFreeze) })
 }
 
-func buildEmbeddingFreeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildEmbeddingFreeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 
 	const batch, vocab, emb, seq = 2, 8, 4, 3
 	lr := 1e-2
@@ -951,7 +951,7 @@ func buildEmbeddingFreeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, seq, emb)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -975,7 +975,7 @@ func buildEmbeddingFreeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runEmbeddingFreeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildEmbeddingFreeze(dtype)
+	goO, payload, err := buildEmbeddingFreeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -988,10 +988,10 @@ func runEmbeddingFreeze(dtype core.DType, exact bool) error {
 
 func caseMHAFreezeF32() error { return runMHAFreeze(core.DTypeFloat32, true) }
 func caseMHAFreezeAllDTypes() error {
-	return runFreezeSpectrum("MHA", buildMHAFreeze)
+	return runFreezeSpectrum("MHA", func(dt core.DType) (freezeOut, []byte, error) { return buildMHAFreeze(dt, parallel.ModeFreeze) })
 }
 
-func buildMHAFreeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildMHAFreeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 
 	cfg := mha.DecoderCausal(8, 2, 2)
 	cfg.MaxSeqLen = 16
@@ -1015,7 +1015,7 @@ func buildMHAFreeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, fc.x)
 	target := core.NewTensor[float32](batch, seq, c.DModel)
 	copy(target.Data, fc.target)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, fc.lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, fc.lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1046,7 +1046,7 @@ func buildMHAFreeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runMHAFreeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildMHAFreeze(dtype)
+	goO, payload, err := buildMHAFreeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -1059,10 +1059,10 @@ func runMHAFreeze(dtype core.DType, exact bool) error {
 
 func caseCNN1FreezeF32() error { return runCNN1Freeze(core.DTypeFloat32, true) }
 func caseCNN1FreezeAllDTypes() error {
-	return runFreezeSpectrum("CNN1", buildCNN1Freeze)
+	return runFreezeSpectrum("CNN1", func(dt core.DType) (freezeOut, []byte, error) { return buildCNN1Freeze(dt, parallel.ModeFreeze) })
 }
 
-func buildCNN1Freeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildCNN1Freeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 
 	cfg := preservingCNN1()
 	const batch = 2
@@ -1090,7 +1090,7 @@ func buildCNN1Freeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, cfg.Filters, outLen)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1118,7 +1118,7 @@ func buildCNN1Freeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runCNN1Freeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildCNN1Freeze(dtype)
+	goO, payload, err := buildCNN1Freeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -1131,10 +1131,10 @@ func runCNN1Freeze(dtype core.DType, exact bool) error {
 
 func caseConvT1FreezeF32() error { return runConvT1Freeze(core.DTypeFloat32, true) }
 func caseConvT1FreezeAllDTypes() error {
-	return runFreezeSpectrum("ConvT1", buildConvT1Freeze)
+	return runFreezeSpectrum("ConvT1", func(dt core.DType) (freezeOut, []byte, error) { return buildConvT1Freeze(dt, parallel.ModeFreeze) })
 }
 
-func buildConvT1Freeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildConvT1Freeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 
 	cfg := preservingConvT1()
 	const batch = 2
@@ -1162,7 +1162,7 @@ func buildConvT1Freeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, cfg.Filters, outLen)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1191,7 +1191,7 @@ func buildConvT1Freeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runConvT1Freeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildConvT1Freeze(dtype)
+	goO, payload, err := buildConvT1Freeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -1204,10 +1204,10 @@ func runConvT1Freeze(dtype core.DType, exact bool) error {
 
 func caseRNNFreezeF32() error { return runRNNFreeze(core.DTypeFloat32, true) }
 func caseRNNFreezeAllDTypes() error {
-	return runFreezeSpectrum("RNN", buildRNNFreeze)
+	return runFreezeSpectrum("RNN", func(dt core.DType) (freezeOut, []byte, error) { return buildRNNFreeze(dt, parallel.ModeFreeze) })
 }
 
-func buildRNNFreeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildRNNFreeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 
 	cfg := smokeRNNCfg()
 	const batch = 2
@@ -1232,7 +1232,7 @@ func buildRNNFreeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, cfg.SeqLen, cfg.HiddenSize)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1256,7 +1256,7 @@ func buildRNNFreeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runRNNFreeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildRNNFreeze(dtype)
+	goO, payload, err := buildRNNFreeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -1269,10 +1269,10 @@ func runRNNFreeze(dtype core.DType, exact bool) error {
 
 func caseLSTMFreezeF32() error { return runLSTMFreeze(core.DTypeFloat32, true) }
 func caseLSTMFreezeAllDTypes() error {
-	return runFreezeSpectrum("LSTM", buildLSTMFreeze)
+	return runFreezeSpectrum("LSTM", func(dt core.DType) (freezeOut, []byte, error) { return buildLSTMFreeze(dt, parallel.ModeFreeze) })
 }
 
-func buildLSTMFreeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildLSTMFreeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 
 	cfg := smokeLSTMCfg()
 	const batch = 2
@@ -1297,7 +1297,7 @@ func buildLSTMFreeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, cfg.SeqLen, cfg.HiddenSize)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1321,7 +1321,7 @@ func buildLSTMFreeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runLSTMFreeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildLSTMFreeze(dtype)
+	goO, payload, err := buildLSTMFreeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -1548,10 +1548,10 @@ func caseMetacognitionFreezeF32() error {
 }
 
 func caseMetacognitionFreezeAllDTypes() error {
-	return runFreezeSpectrum("Metacognition", buildMetacognitionFreeze)
+	return runFreezeSpectrum("Metacognition", func(dt core.DType) (freezeOut, []byte, error) { return buildMetacognitionFreeze(dt, parallel.ModeFreeze) })
 }
 
-func buildMetacognitionFreeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildMetacognitionFreeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 	cfg, batch, seq, packed, x, tgt, lr, err := makeMcModeLeaf(dtype, 0x4d435450^uint32(dtype)*0x9e3779b9)
 	if err != nil {
 		return freezeOut{}, nil, err
@@ -1564,7 +1564,7 @@ func buildMetacognitionFreeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, seq, cfg.Dim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1582,7 +1582,7 @@ func buildMetacognitionFreeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runMetacognitionFreeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildMetacognitionFreeze(dtype)
+	goO, payload, err := buildMetacognitionFreeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -1597,7 +1597,7 @@ func caseGDNFreezeF32() error {
 	return runGDNFreeze(true)
 }
 
-func buildGDNFreeze() (freezeOut, []byte, error) {
+func buildGDNFreeze(mode parallel.TrainMode) (freezeOut, []byte, error) {
 	cfg, batch, seq, packed, x, tgt, lr, err := makeGdModeLeaf(0x47444e50)
 	if err != nil {
 		return freezeOut{}, nil, err
@@ -1610,7 +1610,7 @@ func buildGDNFreeze() (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, seq, cfg.HiddenSize)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1628,7 +1628,7 @@ func buildGDNFreeze() (freezeOut, []byte, error) {
 }
 
 func runGDNFreeze(exact bool) error {
-	goO, payload, err := buildGDNFreeze()
+	goO, payload, err := buildGDNFreeze(parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -1644,10 +1644,10 @@ func caseNestedStackFreezeF32() error {
 }
 
 func caseNestedStackFreezeAllDTypes() error {
-	return runFreezeSpectrum("NestedStack", buildNestedStackFreeze)
+	return runFreezeSpectrum("NestedStack", func(dt core.DType) (freezeOut, []byte, error) { return buildNestedStackFreeze(dt, parallel.ModeFreeze) })
 }
 
-func buildNestedStackFreeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildNestedStackFreeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 	dim, nChildren, batch, seq, packed, x, tgt, lr, err := makeStModeLeaf(dtype, 0x53544b50^uint32(dtype)*0x9e3779b9)
 	if err != nil {
 		return freezeOut{}, nil, err
@@ -1660,7 +1660,7 @@ func buildNestedStackFreeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch*seq, dim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1679,7 +1679,7 @@ func buildNestedStackFreeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runNestedStackFreeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildNestedStackFreeze(dtype)
+	goO, payload, err := buildNestedStackFreeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}
@@ -1697,10 +1697,10 @@ func caseKMeansFreezeF32() error {
 }
 
 func caseKMeansFreezeAllDTypes() error {
-	return runFreezeSpectrum("KMeans", buildKMeansFreeze)
+	return runFreezeSpectrum("KMeans", func(dt core.DType) (freezeOut, []byte, error) { return buildKMeansFreeze(dt, parallel.ModeFreeze) })
 }
 
-func buildKMeansFreeze(dtype core.DType) (freezeOut, []byte, error) {
+func buildKMeansFreeze(dtype core.DType, mode parallel.TrainMode) (freezeOut, []byte, error) {
 	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
 	if err != nil {
 		return freezeOut{}, nil, err
@@ -1714,7 +1714,7 @@ func buildKMeansFreeze(dtype core.DType) (freezeOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, seq, outDim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1732,7 +1732,7 @@ func buildKMeansFreeze(dtype core.DType) (freezeOut, []byte, error) {
 }
 
 func runKMeansFreeze(dtype core.DType, exact bool) error {
-	goO, payload, err := buildKMeansFreeze(dtype)
+	goO, payload, err := buildKMeansFreeze(dtype, parallel.ModeFreeze)
 	if err != nil {
 		return err
 	}

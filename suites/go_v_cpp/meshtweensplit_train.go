@@ -37,6 +37,7 @@ func CasesMeshTweenSplitTrain() []Case {
 		{Name: "Residual MeshTweenSplit volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenSplitVol222F32},
 		{Name: "Mamba MeshTweenSplit volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenSplitVol222F32},
 		{Name: "Metacognition MeshTweenSplit volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenSplitVol222F32},
+		{Name: "KMeans MeshTweenSplit volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenSplitVol222F32},
 		{Name: "GDN MeshTweenSplit volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenSplitVol222F32},
 		{Name: "NestedStack MeshTweenSplit volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenSplitVol222F32},
 		{Name: "Embedding MeshTweenSplit volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenSplitVol222F32},

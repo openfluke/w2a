@@ -21,6 +21,7 @@ import (
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
@@ -57,6 +58,8 @@ func CasesStepBPTrain() []Case {
 		{Name: "Mamba StepBP 1-hop × all 34 dtypes — spectrum", Run: caseMambaStepBPAllDTypes},
 		{Name: "Metacognition StepBP 1-hop Float32 — exact bits", Run: caseMetacognitionStepBPF32},
 		{Name: "Metacognition StepBP 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionStepBPAllDTypes},
+		{Name: "KMeans StepBP 1-hop Float32 — exact bits", Run: caseKMeansStepBPF32},
+		{Name: "KMeans StepBP 1-hop × all 34 dtypes — spectrum", Run: caseKMeansStepBPAllDTypes},
 		{Name: "GDN StepBP 1-hop Float32 — exact bits", Run: caseGDNStepBPF32},
 		{Name: "NestedStack StepBP 1-hop Float32 — exact bits", Run: caseNestedStackStepBPF32},
 		{Name: "NestedStack StepBP 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackStepBPAllDTypes},
@@ -84,6 +87,7 @@ func CasesStepBPTrain() []Case {
 		{Name: "Residual MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseReNBPVol222F32},
 		{Name: "Mamba MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseMbNBPVol222F32},
 		{Name: "Metacognition MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseMcNBPVol222F32},
+		{Name: "KMeans MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseKmNBPVol222F32},
 		{Name: "GDN MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseGdNBPVol222F32},
 		{Name: "NestedStack MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseStNBPVol222F32},
 		{Name: "Embedding MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingNBPVol222F32},
@@ -1806,3 +1810,57 @@ func runNestedStackStepBP(dtype core.DType, exact bool) error {
 	}
 	return compareStepBP(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansStepBPF32() error {
+	return runKMeansStepBP(core.DTypeFloat32, true)
+}
+
+func caseKMeansStepBPAllDTypes() error {
+	return runStepBPSpectrum("KMeans", buildKMeansStepBP)
+}
+
+func buildKMeansStepBP(dtype core.DType) (stepbpOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
+	if err != nil {
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	goO := stepbpOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeSTB1Header(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansStepBP(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansStepBP(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareStepBP(goO, cppO, exact)
+}
+

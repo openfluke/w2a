@@ -21,6 +21,7 @@ import (
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
@@ -56,6 +57,8 @@ func CasesTweenSplitFastProxyTrain() []Case {
 		{Name: "Mamba TweenSplitFastProxy 1-hop × all 34 dtypes — spectrum", Run: caseMambaTweenSplitFastProxyAllDTypes},
 		{Name: "Metacognition TweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseMetacognitionTweenSplitFastProxyF32},
 		{Name: "Metacognition TweenSplitFastProxy 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionTweenSplitFastProxyAllDTypes},
+		{Name: "KMeans TweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseKMeansTweenSplitFastProxyF32},
+		{Name: "KMeans TweenSplitFastProxy 1-hop × all 34 dtypes — spectrum", Run: caseKMeansTweenSplitFastProxyAllDTypes},
 		{Name: "GDN TweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseGDNTweenSplitFastProxyF32},
 		{Name: "NestedStack TweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseNestedStackTweenSplitFastProxyF32},
 		{Name: "NestedStack TweenSplitFastProxy 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackTweenSplitFastProxyAllDTypes},
@@ -82,6 +85,7 @@ func CasesTweenSplitFastProxyTrain() []Case {
 		{Name: "Residual TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenSplitFastProxyVol222F32},
 		{Name: "Mamba TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenSplitFastProxyVol222F32},
 		{Name: "Metacognition TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenSplitFastProxyVol222F32},
+		{Name: "KMeans TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenSplitFastProxyVol222F32},
 		{Name: "GDN TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenSplitFastProxyVol222F32},
 		{Name: "NestedStack TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenSplitFastProxyVol222F32},
 		{Name: "Embedding TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenSplitFastProxyVol222F32},
@@ -1685,3 +1689,57 @@ func runNestedStackTweenSplitFastProxy(dtype core.DType, exact bool) error {
 	}
 	return compareTweenSplitFastProxy(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansTweenSplitFastProxyF32() error {
+	return runKMeansTweenSplitFastProxy(core.DTypeFloat32, true)
+}
+
+func caseKMeansTweenSplitFastProxyAllDTypes() error {
+	return runTweenSplitFastProxySpectrum("KMeans", buildKMeansTweenSplitFastProxy)
+}
+
+func buildKMeansTweenSplitFastProxy(dtype core.DType) (tweenSplitFastProxyOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenSplitFastProxy, lr)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, err
+	}
+	goO := tweenSplitFastProxyOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1HeaderFastProxy(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansTweenSplitFastProxy(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansTweenSplitFastProxy(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppFPB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTweenSplitFastProxy(goO, cppO, exact)
+}
+

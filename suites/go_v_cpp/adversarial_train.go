@@ -8,6 +8,7 @@ import (
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/parallel"
 )
 
@@ -19,6 +20,8 @@ func CasesAdversarialTrain() []Case {
 		{Name: "Parallel Adversarial∥NormalBP × all 34 dtypes — spectrum", Run: caseAdversarialMixedAllDTypes},
 		{Name: "Metacognition Adversarial 1-hop Float32 — exact bits", Run: caseMetacognitionAdversarialF32},
 		{Name: "Metacognition Adversarial 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionAdversarialAllDTypes},
+		{Name: "KMeans Adversarial 1-hop Float32 — exact bits", Run: caseKMeansAdversarialF32},
+		{Name: "KMeans Adversarial 1-hop × all 34 dtypes — spectrum", Run: caseKMeansAdversarialAllDTypes},
 		{Name: "GDN Adversarial 1-hop Float32 — exact bits", Run: caseGDNAdversarialF32},
 		{Name: "NestedStack Adversarial 1-hop Float32 — exact bits", Run: caseNestedStackAdversarialF32},
 		{Name: "NestedStack Adversarial 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackAdversarialAllDTypes},
@@ -199,3 +202,57 @@ func runNestedStackAdversarial(dtype core.DType, exact bool) error {
 	}
 	return compareTweenChain(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansAdversarialF32() error {
+	return runKMeansAdversarial(core.DTypeFloat32, true)
+}
+
+func caseKMeansAdversarialAllDTypes() error {
+	return runTweenChainSpectrum("KMeans", buildKMeansAdversarial)
+}
+
+func buildKMeansAdversarial(dtype core.DType) (tweenChainOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return tweenChainOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return tweenChainOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeAdversarial, lr)
+	if err != nil {
+		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return tweenChainOut{}, nil, err
+	}
+	goO := tweenChainOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTCB1Header(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansAdversarial(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansAdversarial(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppTCB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTweenChain(goO, cppO, exact)
+}
+

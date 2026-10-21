@@ -20,6 +20,7 @@ import (
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
@@ -54,6 +55,8 @@ func CasesStepTweenAltTrain() []Case {
 		{Name: "Mamba StepTweenAlt 1-hop × all 34 dtypes — spectrum", Run: caseMambaStepTweenAltAllDTypes},
 		{Name: "Metacognition StepTweenAlt 1-hop Float32 — exact bits", Run: caseMetacognitionStepTweenAltF32},
 		{Name: "Metacognition StepTweenAlt 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionStepTweenAltAllDTypes},
+		{Name: "KMeans StepTweenAlt 1-hop Float32 — exact bits", Run: caseKMeansStepTweenAltF32},
+		{Name: "KMeans StepTweenAlt 1-hop × all 34 dtypes — spectrum", Run: caseKMeansStepTweenAltAllDTypes},
 		{Name: "GDN StepTweenAlt 1-hop Float32 — exact bits", Run: caseGDNStepTweenAltF32},
 		{Name: "NestedStack StepTweenAlt 1-hop Float32 — exact bits", Run: caseNestedStackStepTweenAltF32},
 		{Name: "NestedStack StepTweenAlt 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackStepTweenAltAllDTypes},
@@ -81,6 +84,7 @@ func CasesStepTweenAltTrain() []Case {
 		{Name: "Residual MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenAltVol222F32},
 		{Name: "Mamba MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenAltVol222F32},
 		{Name: "Metacognition MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenAltVol222F32},
+		{Name: "KMeans MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenAltVol222F32},
 		{Name: "GDN MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenAltVol222F32},
 		{Name: "NestedStack MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenAltVol222F32},
 		{Name: "Embedding MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenAltVol222F32},
@@ -1513,3 +1517,57 @@ func runNestedStackStepTweenAlt(dtype core.DType, exact bool) error {
 	}
 	return compareStepTweenAlt(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansStepTweenAltF32() error {
+	return runKMeansStepTweenAlt(core.DTypeFloat32, true)
+}
+
+func caseKMeansStepTweenAltAllDTypes() error {
+	return runStepTweenAltSpectrum("KMeans", buildKMeansStepTweenAlt)
+}
+
+func buildKMeansStepTweenAlt(dtype core.DType) (steptweenaltOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return steptweenaltOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return steptweenaltOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepTweenAlt, lr)
+	if err != nil {
+		return steptweenaltOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return steptweenaltOut{}, nil, err
+	}
+	goO := steptweenaltOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeSTA1Header(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansStepTweenAlt(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansStepTweenAlt(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTA1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareStepTweenAlt(goO, cppO, exact)
+}
+

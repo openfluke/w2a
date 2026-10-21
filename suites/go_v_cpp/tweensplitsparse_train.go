@@ -21,6 +21,7 @@ import (
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
@@ -56,6 +57,8 @@ func CasesTweenSplitSparseTrain() []Case {
 		{Name: "Mamba TweenSplitSparse 1-hop × all 34 dtypes — spectrum", Run: caseMambaTweenSplitSparseAllDTypes},
 		{Name: "Metacognition TweenSplitSparse 1-hop Float32 — exact bits", Run: caseMetacognitionTweenSplitSparseF32},
 		{Name: "Metacognition TweenSplitSparse 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionTweenSplitSparseAllDTypes},
+		{Name: "KMeans TweenSplitSparse 1-hop Float32 — exact bits", Run: caseKMeansTweenSplitSparseF32},
+		{Name: "KMeans TweenSplitSparse 1-hop × all 34 dtypes — spectrum", Run: caseKMeansTweenSplitSparseAllDTypes},
 		{Name: "GDN TweenSplitSparse 1-hop Float32 — exact bits", Run: caseGDNTweenSplitSparseF32},
 		{Name: "NestedStack TweenSplitSparse 1-hop Float32 — exact bits", Run: caseNestedStackTweenSplitSparseF32},
 		{Name: "NestedStack TweenSplitSparse 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackTweenSplitSparseAllDTypes},
@@ -82,6 +85,7 @@ func CasesTweenSplitSparseTrain() []Case {
 		{Name: "Residual TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenSplitSparseVol222F32},
 		{Name: "Mamba TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenSplitSparseVol222F32},
 		{Name: "Metacognition TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenSplitSparseVol222F32},
+		{Name: "KMeans TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenSplitSparseVol222F32},
 		{Name: "GDN TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenSplitSparseVol222F32},
 		{Name: "NestedStack TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenSplitSparseVol222F32},
 		{Name: "Embedding TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenSplitSparseVol222F32},
@@ -1685,3 +1689,57 @@ func runNestedStackTweenSplitSparse(dtype core.DType, exact bool) error {
 	}
 	return compareTweenSplitSparse(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansTweenSplitSparseF32() error {
+	return runKMeansTweenSplitSparse(core.DTypeFloat32, true)
+}
+
+func caseKMeansTweenSplitSparseAllDTypes() error {
+	return runTweenSplitSparseSpectrum("KMeans", buildKMeansTweenSplitSparse)
+}
+
+func buildKMeansTweenSplitSparse(dtype core.DType) (tweenSplitSparseOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return tweenSplitSparseOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return tweenSplitSparseOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenSplitSparse, lr)
+	if err != nil {
+		return tweenSplitSparseOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return tweenSplitSparseOut{}, nil, err
+	}
+	goO := tweenSplitSparseOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1HeaderSparse(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansTweenSplitSparse(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansTweenSplitSparse(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSPB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTweenSplitSparse(goO, cppO, exact)
+}
+

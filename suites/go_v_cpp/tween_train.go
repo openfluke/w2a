@@ -21,6 +21,7 @@ import (
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
@@ -57,6 +58,8 @@ func CasesTweenTrain() []Case {
 		{Name: "Mamba Tween 1-hop × all 34 dtypes — spectrum", Run: caseMambaTweenAllDTypes},
 		{Name: "Metacognition Tween 1-hop Float32 — exact bits", Run: caseMetacognitionTweenF32},
 		{Name: "Metacognition Tween 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionTweenAllDTypes},
+		{Name: "KMeans Tween 1-hop Float32 — exact bits", Run: caseKMeansTweenF32},
+		{Name: "KMeans Tween 1-hop × all 34 dtypes — spectrum", Run: caseKMeansTweenAllDTypes},
 		{Name: "GDN Tween 1-hop Float32 — exact bits", Run: caseGDNTweenF32},
 		{Name: "NestedStack Tween 1-hop Float32 — exact bits", Run: caseNestedStackTweenF32},
 		{Name: "NestedStack Tween 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackTweenAllDTypes},
@@ -83,6 +86,7 @@ func CasesTweenTrain() []Case {
 		{Name: "Residual Tween volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenVol222F32},
 		{Name: "Mamba Tween volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenVol222F32},
 		{Name: "Metacognition Tween volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenVol222F32},
+		{Name: "KMeans Tween volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenVol222F32},
 		{Name: "GDN Tween volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenVol222F32},
 		{Name: "NestedStack Tween volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenVol222F32},
 		{Name: "Embedding Tween volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenVol222F32},
@@ -1751,3 +1755,57 @@ func runNestedStackTween(dtype core.DType, exact bool) error {
 	}
 	return compareTween(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansTweenF32() error {
+	return runKMeansTween(core.DTypeFloat32, true)
+}
+
+func caseKMeansTweenAllDTypes() error {
+	return runTweenSpectrum("KMeans", buildKMeansTween)
+}
+
+func buildKMeansTween(dtype core.DType) (tweenOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return tweenOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return tweenOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTween, lr)
+	if err != nil {
+		return tweenOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return tweenOut{}, nil, err
+	}
+	goO := tweenOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1Header(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansTween(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansTween(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppTWB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTween(goO, cppO, exact)
+}
+

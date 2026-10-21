@@ -21,6 +21,7 @@ import (
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
@@ -56,6 +57,8 @@ func CasesFreezeTrain() []Case {
 		{Name: "Mamba Freeze 1-hop × all 34 dtypes — spectrum", Run: caseMambaFreezeAllDTypes},
 		{Name: "Metacognition Freeze 1-hop Float32 — exact bits", Run: caseMetacognitionFreezeF32},
 		{Name: "Metacognition Freeze 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionFreezeAllDTypes},
+		{Name: "KMeans Freeze 1-hop Float32 — exact bits", Run: caseKMeansFreezeF32},
+		{Name: "KMeans Freeze 1-hop × all 34 dtypes — spectrum", Run: caseKMeansFreezeAllDTypes},
 		{Name: "GDN Freeze 1-hop Float32 — exact bits", Run: caseGDNFreezeF32},
 		{Name: "NestedStack Freeze 1-hop Float32 — exact bits", Run: caseNestedStackFreezeF32},
 		{Name: "NestedStack Freeze 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackFreezeAllDTypes},
@@ -82,6 +85,7 @@ func CasesFreezeTrain() []Case {
 		{Name: "Residual Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseReFreezeVol222F32},
 		{Name: "Mamba Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseMbFreezeVol222F32},
 		{Name: "Metacognition Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseMcFreezeVol222F32},
+		{Name: "KMeans Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseKmFreezeVol222F32},
 		{Name: "GDN Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseGdFreezeVol222F32},
 		{Name: "NestedStack Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseSkFreezeVol222F32},
 		{Name: "Embedding Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingFreezeVol222F32},
@@ -1685,3 +1689,57 @@ func runNestedStackFreeze(dtype core.DType, exact bool) error {
 	}
 	return compareFreeze(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansFreezeF32() error {
+	return runKMeansFreeze(core.DTypeFloat32, true)
+}
+
+func caseKMeansFreezeAllDTypes() error {
+	return runFreezeSpectrum("KMeans", buildKMeansFreeze)
+}
+
+func buildKMeansFreeze(dtype core.DType) (freezeOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	if err != nil {
+		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	goO := freezeOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeFRB1Header(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansFreeze(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansFreeze(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppFRB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareFreeze(goO, cppO, exact)
+}
+

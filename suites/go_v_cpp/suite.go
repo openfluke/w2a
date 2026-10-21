@@ -78,6 +78,7 @@ func Cases() []Case {
 	out = append(out, CasesSequentialTrain()...)
 	out = append(out, CasesResidualTrain()...)
 	out = append(out, CasesMambaTrain()...)
+	out = append(out, CasesKMeansTrain()...)
 	out = append(out, CasesGDNTrain()...)
 	out = append(out, CasesStackTrain()...)
 	out = append(out, CasesStepBPTrain()...)

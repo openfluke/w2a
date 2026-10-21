@@ -37,6 +37,7 @@ func CasesMeshTweenSplitFastProxyTrain() []Case {
 		{Name: "Residual MeshTweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenSplitFastProxyVol222F32},
 		{Name: "Mamba MeshTweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenSplitFastProxyVol222F32},
 		{Name: "Metacognition MeshTweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenSplitFastProxyVol222F32},
+		{Name: "KMeans MeshTweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenSplitFastProxyVol222F32},
 		{Name: "GDN MeshTweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenSplitFastProxyVol222F32},
 		{Name: "NestedStack MeshTweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenSplitFastProxyVol222F32},
 		{Name: "Embedding MeshTweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenSplitFastProxyVol222F32},

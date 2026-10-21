@@ -20,6 +20,7 @@ import (
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
@@ -54,6 +55,8 @@ func CasesStepTweenSplitLinearTrain() []Case {
 		{Name: "Mamba StepTweenSplitLinear 1-hop × all 34 dtypes — spectrum", Run: caseMambaStepTweenSplitLinearAllDTypes},
 		{Name: "Metacognition StepTweenSplitLinear 1-hop Float32 — exact bits", Run: caseMetacognitionStepTweenSplitLinearF32},
 		{Name: "Metacognition StepTweenSplitLinear 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionStepTweenSplitLinearAllDTypes},
+		{Name: "KMeans StepTweenSplitLinear 1-hop Float32 — exact bits", Run: caseKMeansStepTweenSplitLinearF32},
+		{Name: "KMeans StepTweenSplitLinear 1-hop × all 34 dtypes — spectrum", Run: caseKMeansStepTweenSplitLinearAllDTypes},
 		{Name: "GDN StepTweenSplitLinear 1-hop Float32 — exact bits", Run: caseGDNStepTweenSplitLinearF32},
 		{Name: "NestedStack StepTweenSplitLinear 1-hop Float32 — exact bits", Run: caseNestedStackStepTweenSplitLinearF32},
 		{Name: "NestedStack StepTweenSplitLinear 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackStepTweenSplitLinearAllDTypes},
@@ -81,6 +84,7 @@ func CasesStepTweenSplitLinearTrain() []Case {
 		{Name: "Residual TweenSplitLinear volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenSplitLinearVol222F32},
 		{Name: "Mamba TweenSplitLinear volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenSplitLinearVol222F32},
 		{Name: "Metacognition TweenSplitLinear volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenSplitLinearVol222F32},
+		{Name: "KMeans TweenSplitLinear volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenSplitLinearVol222F32},
 		{Name: "GDN TweenSplitLinear volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenSplitLinearVol222F32},
 		{Name: "NestedStack TweenSplitLinear volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenSplitLinearVol222F32},
 		{Name: "Embedding TweenSplitLinear volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenSplitLinearVol222F32},
@@ -1513,3 +1517,57 @@ func runNestedStackStepTweenSplitLinear(dtype core.DType, exact bool) error {
 	}
 	return compareStepTweenSplitLinear(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansStepTweenSplitLinearF32() error {
+	return runKMeansStepTweenSplitLinear(core.DTypeFloat32, true)
+}
+
+func caseKMeansStepTweenSplitLinearAllDTypes() error {
+	return runStepTweenSplitLinearSpectrum("KMeans", buildKMeansStepTweenSplitLinear)
+}
+
+func buildKMeansStepTweenSplitLinear(dtype core.DType) (steptweensplitlinearOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return steptweensplitlinearOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return steptweensplitlinearOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepTweenSplitLinear, lr)
+	if err != nil {
+		return steptweensplitlinearOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return steptweensplitlinearOut{}, nil, err
+	}
+	goO := steptweensplitlinearOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeSTL1Header(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansStepTweenSplitLinear(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansStepTweenSplitLinear(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTL1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareStepTweenSplitLinear(goO, cppO, exact)
+}
+

@@ -21,6 +21,7 @@ import (
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
@@ -56,6 +57,8 @@ func CasesTweenSplitHeadProxyTrain() []Case {
 		{Name: "Mamba TweenSplitHeadProxy 1-hop × all 34 dtypes — spectrum", Run: caseMambaTweenSplitHeadProxyAllDTypes},
 		{Name: "Metacognition TweenSplitHeadProxy 1-hop Float32 — exact bits", Run: caseMetacognitionTweenSplitHeadProxyF32},
 		{Name: "Metacognition TweenSplitHeadProxy 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionTweenSplitHeadProxyAllDTypes},
+		{Name: "KMeans TweenSplitHeadProxy 1-hop Float32 — exact bits", Run: caseKMeansTweenSplitHeadProxyF32},
+		{Name: "KMeans TweenSplitHeadProxy 1-hop × all 34 dtypes — spectrum", Run: caseKMeansTweenSplitHeadProxyAllDTypes},
 		{Name: "GDN TweenSplitHeadProxy 1-hop Float32 — exact bits", Run: caseGDNTweenSplitHeadProxyF32},
 		{Name: "NestedStack TweenSplitHeadProxy 1-hop Float32 — exact bits", Run: caseNestedStackTweenSplitHeadProxyF32},
 		{Name: "NestedStack TweenSplitHeadProxy 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackTweenSplitHeadProxyAllDTypes},
@@ -82,6 +85,7 @@ func CasesTweenSplitHeadProxyTrain() []Case {
 		{Name: "Residual TweenSplitHeadProxy volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenSplitHeadProxyVol222F32},
 		{Name: "Mamba TweenSplitHeadProxy volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenSplitHeadProxyVol222F32},
 		{Name: "Metacognition TweenSplitHeadProxy volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenSplitHeadProxyVol222F32},
+		{Name: "KMeans TweenSplitHeadProxy volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenSplitHeadProxyVol222F32},
 		{Name: "GDN TweenSplitHeadProxy volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenSplitHeadProxyVol222F32},
 		{Name: "NestedStack TweenSplitHeadProxy volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenSplitHeadProxyVol222F32},
 		{Name: "Embedding TweenSplitHeadProxy volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenSplitHeadProxyVol222F32},
@@ -1685,3 +1689,57 @@ func runNestedStackTweenSplitHeadProxy(dtype core.DType, exact bool) error {
 	}
 	return compareTweenSplitHeadProxy(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansTweenSplitHeadProxyF32() error {
+	return runKMeansTweenSplitHeadProxy(core.DTypeFloat32, true)
+}
+
+func caseKMeansTweenSplitHeadProxyAllDTypes() error {
+	return runTweenSplitHeadProxySpectrum("KMeans", buildKMeansTweenSplitHeadProxy)
+}
+
+func buildKMeansTweenSplitHeadProxy(dtype core.DType) (tweenSplitHeadProxyOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return tweenSplitHeadProxyOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return tweenSplitHeadProxyOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenSplitHeadProxy, lr)
+	if err != nil {
+		return tweenSplitHeadProxyOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return tweenSplitHeadProxyOut{}, nil, err
+	}
+	goO := tweenSplitHeadProxyOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1HeaderHeadProxy(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansTweenSplitHeadProxy(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansTweenSplitHeadProxy(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppHPB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTweenSplitHeadProxy(goO, cppO, exact)
+}
+

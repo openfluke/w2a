@@ -21,6 +21,7 @@ import (
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
@@ -56,6 +57,8 @@ func CasesTweenSplitLinearCacheTrain() []Case {
 		{Name: "Mamba TweenSplitLinearCache 1-hop × all 34 dtypes — spectrum", Run: caseMambaTweenSplitLinearCacheAllDTypes},
 		{Name: "Metacognition TweenSplitLinearCache 1-hop Float32 — exact bits", Run: caseMetacognitionTweenSplitLinearCacheF32},
 		{Name: "Metacognition TweenSplitLinearCache 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionTweenSplitLinearCacheAllDTypes},
+		{Name: "KMeans TweenSplitLinearCache 1-hop Float32 — exact bits", Run: caseKMeansTweenSplitLinearCacheF32},
+		{Name: "KMeans TweenSplitLinearCache 1-hop × all 34 dtypes — spectrum", Run: caseKMeansTweenSplitLinearCacheAllDTypes},
 		{Name: "GDN TweenSplitLinearCache 1-hop Float32 — exact bits", Run: caseGDNTweenSplitLinearCacheF32},
 		{Name: "NestedStack TweenSplitLinearCache 1-hop Float32 — exact bits", Run: caseNestedStackTweenSplitLinearCacheF32},
 		{Name: "NestedStack TweenSplitLinearCache 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackTweenSplitLinearCacheAllDTypes},
@@ -82,6 +85,7 @@ func CasesTweenSplitLinearCacheTrain() []Case {
 		{Name: "Residual TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenSplitLinearCacheVol222F32},
 		{Name: "Mamba TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenSplitLinearCacheVol222F32},
 		{Name: "Metacognition TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenSplitLinearCacheVol222F32},
+		{Name: "KMeans TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenSplitLinearCacheVol222F32},
 		{Name: "GDN TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenSplitLinearCacheVol222F32},
 		{Name: "NestedStack TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenSplitLinearCacheVol222F32},
 		{Name: "Embedding TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenSplitLinearCacheVol222F32},
@@ -1685,3 +1689,57 @@ func runNestedStackTweenSplitLinearCache(dtype core.DType, exact bool) error {
 	}
 	return compareTweenSplitLinearCache(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansTweenSplitLinearCacheF32() error {
+	return runKMeansTweenSplitLinearCache(core.DTypeFloat32, true)
+}
+
+func caseKMeansTweenSplitLinearCacheAllDTypes() error {
+	return runTweenSplitLinearCacheSpectrum("KMeans", buildKMeansTweenSplitLinearCache)
+}
+
+func buildKMeansTweenSplitLinearCache(dtype core.DType) (tweenSplitLinearCacheOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenSplitLinearCache, lr)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, err
+	}
+	goO := tweenSplitLinearCacheOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1HeaderLinearCache(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansTweenSplitLinearCache(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansTweenSplitLinearCache(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppLCB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTweenSplitLinearCache(goO, cppO, exact)
+}
+

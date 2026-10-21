@@ -37,6 +37,7 @@ func CasesMeshTweenAltTrain() []Case {
 		{Name: "Residual MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenAltVol222F32},
 		{Name: "Mamba MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenAltVol222F32},
 		{Name: "Metacognition MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenAltVol222F32},
+		{Name: "KMeans MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenAltVol222F32},
 		{Name: "GDN MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenAltVol222F32},
 		{Name: "NestedStack MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenAltVol222F32},
 		{Name: "Embedding MeshTweenAlt volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenAltVol222F32},

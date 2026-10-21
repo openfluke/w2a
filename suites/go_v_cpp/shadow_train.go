@@ -8,6 +8,7 @@ import (
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/parallel"
 )
 
@@ -19,6 +20,8 @@ func CasesShadowTrain() []Case {
 		{Name: "Parallel Shadow∥NormalBP KD × all 34 dtypes — spectrum", Run: caseShadowKDAllDTypes},
 		{Name: "Metacognition Shadow 1-hop Float32 — exact bits", Run: caseMetacognitionShadowF32},
 		{Name: "Metacognition Shadow 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionShadowAllDTypes},
+		{Name: "KMeans Shadow 1-hop Float32 — exact bits", Run: caseKMeansShadowF32},
+		{Name: "KMeans Shadow 1-hop × all 34 dtypes — spectrum", Run: caseKMeansShadowAllDTypes},
 		{Name: "GDN Shadow 1-hop Float32 — exact bits", Run: caseGDNShadowF32},
 		{Name: "NestedStack Shadow 1-hop Float32 — exact bits", Run: caseNestedStackShadowF32},
 		{Name: "NestedStack Shadow 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackShadowAllDTypes},
@@ -202,3 +205,57 @@ func runNestedStackShadow(dtype core.DType, exact bool) error {
 	}
 	return compareFreeze(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansShadowF32() error {
+	return runKMeansShadow(core.DTypeFloat32, true)
+}
+
+func caseKMeansShadowAllDTypes() error {
+	return runFreezeSpectrum("KMeans", buildKMeansShadow)
+}
+
+func buildKMeansShadow(dtype core.DType) (freezeOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeShadow, lr)
+	if err != nil {
+		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	goO := freezeOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeFRB1Header(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansShadow(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansShadow(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppFRB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareFreeze(goO, cppO, exact)
+}
+

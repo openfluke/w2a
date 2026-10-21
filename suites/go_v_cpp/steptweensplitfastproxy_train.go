@@ -20,6 +20,7 @@ import (
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
@@ -54,6 +55,8 @@ func CasesStepTweenSplitFastProxyTrain() []Case {
 		{Name: "Mamba StepTweenSplitFastProxy 1-hop × all 34 dtypes — spectrum", Run: caseMambaStepTweenSplitFastProxyAllDTypes},
 		{Name: "Metacognition StepTweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseMetacognitionStepTweenSplitFastProxyF32},
 		{Name: "Metacognition StepTweenSplitFastProxy 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionStepTweenSplitFastProxyAllDTypes},
+		{Name: "KMeans StepTweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseKMeansStepTweenSplitFastProxyF32},
+		{Name: "KMeans StepTweenSplitFastProxy 1-hop × all 34 dtypes — spectrum", Run: caseKMeansStepTweenSplitFastProxyAllDTypes},
 		{Name: "GDN StepTweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseGDNStepTweenSplitFastProxyF32},
 		{Name: "NestedStack StepTweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseNestedStackStepTweenSplitFastProxyF32},
 		{Name: "NestedStack StepTweenSplitFastProxy 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackStepTweenSplitFastProxyAllDTypes},
@@ -81,6 +84,7 @@ func CasesStepTweenSplitFastProxyTrain() []Case {
 		{Name: "Residual TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenSplitFastProxyVol222F32},
 		{Name: "Mamba TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenSplitFastProxyVol222F32},
 		{Name: "Metacognition TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenSplitFastProxyVol222F32},
+		{Name: "KMeans TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenSplitFastProxyVol222F32},
 		{Name: "GDN TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenSplitFastProxyVol222F32},
 		{Name: "NestedStack TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenSplitFastProxyVol222F32},
 		{Name: "Embedding TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenSplitFastProxyVol222F32},
@@ -1513,3 +1517,57 @@ func runNestedStackStepTweenSplitFastProxy(dtype core.DType, exact bool) error {
 	}
 	return compareStepTweenSplitFastProxy(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansStepTweenSplitFastProxyF32() error {
+	return runKMeansStepTweenSplitFastProxy(core.DTypeFloat32, true)
+}
+
+func caseKMeansStepTweenSplitFastProxyAllDTypes() error {
+	return runStepTweenSplitFastProxySpectrum("KMeans", buildKMeansStepTweenSplitFastProxy)
+}
+
+func buildKMeansStepTweenSplitFastProxy(dtype core.DType) (steptweensplitfastproxyOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return steptweensplitfastproxyOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return steptweensplitfastproxyOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepTweenSplitFastProxy, lr)
+	if err != nil {
+		return steptweensplitfastproxyOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return steptweensplitfastproxyOut{}, nil, err
+	}
+	goO := steptweensplitfastproxyOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeSTF1Header(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansStepTweenSplitFastProxy(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansStepTweenSplitFastProxy(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTF1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareStepTweenSplitFastProxy(goO, cppO, exact)
+}
+

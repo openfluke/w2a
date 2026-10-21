@@ -21,6 +21,7 @@ import (
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/residual"
@@ -143,6 +144,11 @@ func applyFastProxyGradIn(op any, gy, input, pre *core.Tensor[float32]) *core.Te
 		}
 	case *metacognition.Layer:
 		gx, _, err := metacognition.Backward(l, gy, input, pre)
+		if err == nil {
+			return gx
+		}
+	case *kmeans.Layer:
+		gx, _, err := kmeans.Backward(l, gy, input, pre)
 		if err == nil {
 			return gx
 		}
@@ -2257,3 +2263,53 @@ func caseSkTweenSplitFastProxyVol222F32() error {
 	fmt.Printf("\n      TweenSplitFastProxy vol 2x2x2x1 %s loss=%.6g exact_bit", "NestedStack", goO.loss)
 	return nil
 }
+
+// --- CASCADE KMeans vol (auto) ---
+func caseKmTweenSplitFastProxyVol222F32() error {
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	stack := depth * rows * cols * lpc
+	const lr = 1e-2
+	cfg := cascadeVolKmCfg()
+	seq := 2
+	W := randInit(cfg.NumClusters, cfg.FeatureDim, 0x4b4d5638)
+	for i := range W {
+		W[i] *= 0.05
+	}
+	x := randInit(batch*seq, cfg.FeatureDim, 0x4b4d5639)
+	for i := range x {
+		x[i] *= 0.05
+	}
+	target := make([]float32, kmCascadeVolPostLen(batch, seq, cfg))
+	for i := range target {
+		target[i] = float32(0.05 * float64(i+1))
+	}
+	cells := make([]kmVolCell, stack)
+	for i := range cells {
+		cells[i] = kmVolCell{
+			enabled: true, cfg: cfg, seq: seq,
+			dtype: core.DTypeFloat32, W: append([]float32(nil), W...),
+		}
+	}
+	goO, err := runGoKmVolApply(depth, rows, cols, lpc, batch, cells, x, target, lr, applyModeTweenSplitFastProxyVolume, true)
+	if err != nil {
+		return fmt.Errorf("go: %w", err)
+	}
+	payload, err := encodeKmVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+	if err != nil {
+		return err
+	}
+	raw, _, err := runCppTweenSplitFastProxyVolRetarget(payload, "KMV1", "KMFP", "KMFO", "KMVO", 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	cppO, _, err := decodeKmVolNBP(raw)
+	if err != nil {
+		return err
+	}
+	if err := compareTweenVol(goO, cppO); err != nil {
+		return err
+	}
+	fmt.Printf("\n      TweenSplitFastProxy vol 2x2x2x1 %s loss=%.6g exact_bit", "KMeans", goO.loss)
+	return nil
+}
+

@@ -20,6 +20,7 @@ import (
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
@@ -54,6 +55,8 @@ func CasesStepTweenSplitHeadProxyAsyncTrain() []Case {
 		{Name: "Mamba StepTweenSplitHeadProxyAsync 1-hop × all 34 dtypes — spectrum", Run: caseMambaStepTweenSplitHeadProxyAsyncAllDTypes},
 		{Name: "Metacognition StepTweenSplitHeadProxyAsync 1-hop Float32 — exact bits", Run: caseMetacognitionStepTweenSplitHeadProxyAsyncF32},
 		{Name: "Metacognition StepTweenSplitHeadProxyAsync 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionStepTweenSplitHeadProxyAsyncAllDTypes},
+		{Name: "KMeans StepTweenSplitHeadProxyAsync 1-hop Float32 — exact bits", Run: caseKMeansStepTweenSplitHeadProxyAsyncF32},
+		{Name: "KMeans StepTweenSplitHeadProxyAsync 1-hop × all 34 dtypes — spectrum", Run: caseKMeansStepTweenSplitHeadProxyAsyncAllDTypes},
 		{Name: "GDN StepTweenSplitHeadProxyAsync 1-hop Float32 — exact bits", Run: caseGDNStepTweenSplitHeadProxyAsyncF32},
 		{Name: "NestedStack StepTweenSplitHeadProxyAsync 1-hop Float32 — exact bits", Run: caseNestedStackStepTweenSplitHeadProxyAsyncF32},
 		{Name: "NestedStack StepTweenSplitHeadProxyAsync 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackStepTweenSplitHeadProxyAsyncAllDTypes},
@@ -81,6 +84,7 @@ func CasesStepTweenSplitHeadProxyAsyncTrain() []Case {
 		{Name: "Residual TweenSplitHeadProxyAsync volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenSplitHeadProxyAsyncVol222F32},
 		{Name: "Mamba TweenSplitHeadProxyAsync volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenSplitHeadProxyAsyncVol222F32},
 		{Name: "Metacognition TweenSplitHeadProxyAsync volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenSplitHeadProxyAsyncVol222F32},
+		{Name: "KMeans TweenSplitHeadProxyAsync volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenSplitHeadProxyAsyncVol222F32},
 		{Name: "GDN TweenSplitHeadProxyAsync volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenSplitHeadProxyAsyncVol222F32},
 		{Name: "NestedStack TweenSplitHeadProxyAsync volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenSplitHeadProxyAsyncVol222F32},
 		{Name: "Embedding TweenSplitHeadProxyAsync volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenSplitHeadProxyAsyncVol222F32},
@@ -1513,3 +1517,57 @@ func runNestedStackStepTweenSplitHeadProxyAsync(dtype core.DType, exact bool) er
 	}
 	return compareStepTweenSplitHeadProxyAsync(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansStepTweenSplitHeadProxyAsyncF32() error {
+	return runKMeansStepTweenSplitHeadProxyAsync(core.DTypeFloat32, true)
+}
+
+func caseKMeansStepTweenSplitHeadProxyAsyncAllDTypes() error {
+	return runStepTweenSplitHeadProxyAsyncSpectrum("KMeans", buildKMeansStepTweenSplitHeadProxyAsync)
+}
+
+func buildKMeansStepTweenSplitHeadProxyAsync(dtype core.DType) (steptweensplitheadproxyasyncOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return steptweensplitheadproxyasyncOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return steptweensplitheadproxyasyncOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepTweenSplitHeadProxyAsync, lr)
+	if err != nil {
+		return steptweensplitheadproxyasyncOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return steptweensplitheadproxyasyncOut{}, nil, err
+	}
+	goO := steptweensplitheadproxyasyncOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeSHA1Header(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansStepTweenSplitHeadProxyAsync(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansStepTweenSplitHeadProxyAsync(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSHA1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareStepTweenSplitHeadProxyAsync(goO, cppO, exact)
+}
+

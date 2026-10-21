@@ -20,6 +20,7 @@ import (
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
@@ -54,6 +55,8 @@ func CasesStepTweenChainTrain() []Case {
 		{Name: "Mamba StepTweenChain 1-hop × all 34 dtypes — spectrum", Run: caseMambaStepTweenChainAllDTypes},
 		{Name: "Metacognition StepTweenChain 1-hop Float32 — exact bits", Run: caseMetacognitionStepTweenChainF32},
 		{Name: "Metacognition StepTweenChain 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionStepTweenChainAllDTypes},
+		{Name: "KMeans StepTweenChain 1-hop Float32 — exact bits", Run: caseKMeansStepTweenChainF32},
+		{Name: "KMeans StepTweenChain 1-hop × all 34 dtypes — spectrum", Run: caseKMeansStepTweenChainAllDTypes},
 		{Name: "GDN StepTweenChain 1-hop Float32 — exact bits", Run: caseGDNStepTweenChainF32},
 		{Name: "NestedStack StepTweenChain 1-hop Float32 — exact bits", Run: caseNestedStackStepTweenChainF32},
 		{Name: "NestedStack StepTweenChain 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackStepTweenChainAllDTypes},
@@ -81,6 +84,7 @@ func CasesStepTweenChainTrain() []Case {
 		{Name: "Residual MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenChainVol222F32},
 		{Name: "Mamba MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenChainVol222F32},
 		{Name: "Metacognition MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenChainVol222F32},
+		{Name: "KMeans MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenChainVol222F32},
 		{Name: "GDN MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenChainVol222F32},
 		{Name: "NestedStack MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenChainVol222F32},
 		{Name: "Embedding MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenChainVol222F32},
@@ -1513,3 +1517,57 @@ func runNestedStackStepTweenChain(dtype core.DType, exact bool) error {
 	}
 	return compareStepTweenChain(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansStepTweenChainF32() error {
+	return runKMeansStepTweenChain(core.DTypeFloat32, true)
+}
+
+func caseKMeansStepTweenChainAllDTypes() error {
+	return runStepTweenChainSpectrum("KMeans", buildKMeansStepTweenChain)
+}
+
+func buildKMeansStepTweenChain(dtype core.DType) (steptweenchainOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return steptweenchainOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return steptweenchainOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepTweenChain, lr)
+	if err != nil {
+		return steptweenchainOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return steptweenchainOut{}, nil, err
+	}
+	goO := steptweenchainOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeSTC1Header(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansStepTweenChain(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansStepTweenChain(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTC1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareStepTweenChain(goO, cppO, exact)
+}
+

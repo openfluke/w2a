@@ -8,6 +8,7 @@ import (
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/parallel"
 )
 
@@ -19,6 +20,8 @@ func CasesMemoryTrain() []Case {
 		{Name: "Parallel Memory gate open × all 34 dtypes — spectrum", Run: caseMemoryAlwaysAllDTypes},
 		{Name: "Metacognition Memory 1-hop Float32 — exact bits", Run: caseMetacognitionMemoryF32},
 		{Name: "Metacognition Memory 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionMemoryAllDTypes},
+		{Name: "KMeans Memory 1-hop Float32 — exact bits", Run: caseKMeansMemoryF32},
+		{Name: "KMeans Memory 1-hop × all 34 dtypes — spectrum", Run: caseKMeansMemoryAllDTypes},
 		{Name: "GDN Memory 1-hop Float32 — exact bits", Run: caseGDNMemoryF32},
 		{Name: "NestedStack Memory 1-hop Float32 — exact bits", Run: caseNestedStackMemoryF32},
 		{Name: "NestedStack Memory 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackMemoryAllDTypes},
@@ -203,3 +206,57 @@ func runNestedStackMemory(dtype core.DType, exact bool) error {
 	}
 	return compareTweenChain(goO, cppO, exact)
 }
+
+// --- CASCADE KMeans leaf (auto) ---
+
+func caseKMeansMemoryF32() error {
+	return runKMeansMemory(core.DTypeFloat32, true)
+}
+
+func caseKMeansMemoryAllDTypes() error {
+	return runTweenChainSpectrum("KMeans", buildKMeansMemory)
+}
+
+func buildKMeansMemory(dtype core.DType) (tweenChainOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return tweenChainOut{}, nil, err
+	}
+	st, err := newKmStack(cfg, dtype, packed)
+	if err != nil {
+		return tweenChainOut{}, nil, err
+	}
+	outDim := cfg.OutDim()
+	xin := core.NewTensor[float32](batch, seq, cfg.FeatureDim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, outDim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeMemory, lr)
+	if err != nil {
+		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	kl := st.Children[0].(*kmeans.Layer)
+	wa, err := packKMeansWeightsF32(kl)
+	if err != nil {
+		return tweenChainOut{}, nil, err
+	}
+	goO := tweenChainOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTCB1Header(1, 1, batch, lr)
+	writeKmChild(buf, cfg, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.FeatureDim)},
+		[]int32{int32(batch), int32(seq), int32(outDim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runKMeansMemory(dtype core.DType, exact bool) error {
+	goO, payload, err := buildKMeansMemory(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppTCB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTweenChain(goO, cppO, exact)
+}
+

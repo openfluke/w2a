@@ -31,6 +31,7 @@ func CasesMeshTweenChainTrain() []Case {
 		{Name: "Residual MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenChainVol222F32},
 		{Name: "Mamba MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenChainVol222F32},
 		{Name: "Metacognition MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenChainVol222F32},
+		{Name: "KMeans MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseKmTweenChainVol222F32},
 		{Name: "GDN MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenChainVol222F32},
 		{Name: "NestedStack MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenChainVol222F32},
 		{Name: "Embedding MeshTweenChain volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenChainVol222F32},

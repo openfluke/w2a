@@ -17,12 +17,12 @@ import (
 	"github.com/openfluke/welvet/layers/convt1"
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/layers/embedding"
+	"github.com/openfluke/welvet/layers/gdn"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/layernorm"
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
-	"github.com/openfluke/welvet/layers/kmeans"
-	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/layers/residual"
@@ -313,7 +313,7 @@ func encodeDenseTCB1(dtype core.DType, lr float64, children []denseStepChild, ba
 	return in.Bytes()
 }
 
-func runGoDenseTweenChain(dtype core.DType, lr float64, children []denseStepChild, batch int, ticksX, ticksT [][]float32) (tweenChainOut, error) {
+func runGoDenseTweenChain(dtype core.DType, lr float64, children []denseStepChild, batch int, ticksX, ticksT [][]float32, mode parallel.TrainMode) (tweenChainOut, error) {
 	var z tweenChainOut
 	ops := make([]any, len(children))
 	for i, ch := range children {
@@ -335,7 +335,7 @@ func runGoDenseTweenChain(dtype core.DType, lr float64, children []denseStepChil
 		copy(xin.Data, ticksX[t])
 		tgt := core.NewTensor[float32](batch, children[len(children)-1].out)
 		copy(tgt.Data, ticksT[t])
-		loss, err = parallel.TrainStackMSE(st, xin, tgt, parallel.ModeTweenChain, lr)
+		loss, err = parallel.TrainStackMSE(st, xin, tgt, mode, lr)
 		if err != nil {
 			return z, err
 		}
@@ -364,7 +364,7 @@ func caseDenseTweenChainMultiHopF32() error {
 	tgt := []float32{0.2, 0.4, 0.1, 0.3}
 	ticksX := [][]float32{append([]float32(nil), x...)}
 	ticksT := [][]float32{append([]float32(nil), tgt...)}
-	goO, err := runGoDenseTweenChain(core.DTypeFloat32, lr, children, batch, ticksX, ticksT)
+	goO, err := runGoDenseTweenChain(core.DTypeFloat32, lr, children, batch, ticksX, ticksT, parallel.ModeTweenChain)
 	if err != nil {
 		return fmt.Errorf("go: %w", err)
 	}
@@ -393,7 +393,7 @@ func caseDenseTweenChain1HopAllDTypes() error {
 		tx := [][]float32{append([]float32(nil), x...)}
 		tt := [][]float32{append([]float32(nil), tgt...)}
 		t0 := time.Now()
-		goO, err := runGoDenseTweenChain(dt, 1e-2, ch, batch, tx, tt)
+		goO, err := runGoDenseTweenChain(dt, 1e-2, ch, batch, tx, tt, parallel.ModeTweenChain)
 		goDur := time.Since(t0)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s go:%v", dt, err))
@@ -447,10 +447,12 @@ func caseRMSNormTweenChainF32() error {
 }
 
 func caseRMSNormTweenChainAllDTypes() error {
-	return runTweenChainSpectrum("RMSNorm", buildRMSNormTweenChain)
+	return runTweenChainSpectrum("RMSNorm", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildRMSNormTweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildRMSNormTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildRMSNormTweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 
 	const batch, dim = 2, 4
 	lr := 1e-2
@@ -474,7 +476,7 @@ func buildRMSNormTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, dim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -497,7 +499,7 @@ func buildRMSNormTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 }
 
 func runRMSNormTweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildRMSNormTweenChain(dtype)
+	goO, payload, err := buildRMSNormTweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -513,10 +515,12 @@ func caseLayerNormTweenChainF32() error {
 }
 
 func caseLayerNormTweenChainAllDTypes() error {
-	return runTweenChainSpectrum("LayerNorm", buildLayerNormTweenChain)
+	return runTweenChainSpectrum("LayerNorm", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildLayerNormTweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildLayerNormTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildLayerNormTweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 
 	const batch, dim = 2, 4
 	lr := 1e-2
@@ -544,7 +548,7 @@ func buildLayerNormTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, dim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -575,7 +579,7 @@ func buildLayerNormTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 }
 
 func runLayerNormTweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildLayerNormTweenChain(dtype)
+	goO, payload, err := buildLayerNormTweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -591,10 +595,12 @@ func caseSoftmaxTweenChainF32() error {
 }
 
 func caseSoftmaxTweenChainAllDTypes() error {
-	return runTweenChainSpectrum("Softmax", buildSoftmaxTweenChain)
+	return runTweenChainSpectrum("Softmax", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildSoftmaxTweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildSoftmaxTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildSoftmaxTweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 
 	const batch, dim = 2, 4
 	lr := 1e-2
@@ -616,7 +622,7 @@ func buildSoftmaxTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, dim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -633,7 +639,7 @@ func buildSoftmaxTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 }
 
 func runSoftmaxTweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildSoftmaxTweenChain(dtype)
+	goO, payload, err := buildSoftmaxTweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -649,10 +655,12 @@ func caseSwiGLUTweenChainF32() error {
 }
 
 func caseSwiGLUTweenChainAllDTypes() error {
-	return runTweenChainSpectrum("SwiGLU", buildSwiGLUTweenChain)
+	return runTweenChainSpectrum("SwiGLU", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildSwiGLUTweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildSwiGLUTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildSwiGLUTweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 
 	const batch, inDim, inter = 2, 4, 8
 	lr := 1e-2
@@ -684,7 +692,7 @@ func buildSwiGLUTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, inDim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -717,7 +725,7 @@ func buildSwiGLUTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 }
 
 func runSwiGLUTweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildSwiGLUTweenChain(dtype)
+	goO, payload, err := buildSwiGLUTweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -734,7 +742,7 @@ func caseSequentialTweenChainF32() error {
 
 func caseSequentialTweenChainAllDTypes() error {
 	return runTweenChainSpectrum("Sequential", func(dt core.DType) (tweenChainOut, []byte, error) {
-		return buildSeqResTweenChain(true, dt)
+		return buildSeqResTweenChain(true, dt, parallel.ModeTweenChain)
 	})
 }
 
@@ -744,11 +752,11 @@ func caseResidualTweenChainF32() error {
 
 func caseResidualTweenChainAllDTypes() error {
 	return runTweenChainSpectrum("Residual", func(dt core.DType) (tweenChainOut, []byte, error) {
-		return buildSeqResTweenChain(false, dt)
+		return buildSeqResTweenChain(false, dt, parallel.ModeTweenChain)
 	})
 }
 
-func buildSeqResTweenChain(isSeq bool, dtype core.DType) (tweenChainOut, []byte, error) {
+func buildSeqResTweenChain(isSeq bool, dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 
 	const batch, dim, depth, seq = 2, 4, 2, 1
 	lr := 1e-2
@@ -790,7 +798,7 @@ func buildSeqResTweenChain(isSeq bool, dtype core.DType) (tweenChainOut, []byte,
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, dim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -835,7 +843,7 @@ func buildSeqResTweenChain(isSeq bool, dtype core.DType) (tweenChainOut, []byte,
 }
 
 func runSeqResTweenChain(isSeq bool, dtype core.DType, exact bool) error {
-	goO, payload, err := buildSeqResTweenChain(isSeq, dtype)
+	goO, payload, err := buildSeqResTweenChain(isSeq, dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -851,10 +859,12 @@ func caseMambaTweenChainF32() error {
 }
 
 func caseMambaTweenChainAllDTypes() error {
-	return runTweenChainSpectrum("Mamba", buildMambaTweenChain)
+	return runTweenChainSpectrum("Mamba", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildMambaTweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildMambaTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildMambaTweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 
 	cfg := mamba.Config{DModel: 4, DState: 2, Expand: 2, SeqLen: 2}
 	const batch = 2
@@ -885,7 +895,7 @@ func buildMambaTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, cfg.SeqLen, cfg.DModel)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -912,7 +922,7 @@ func buildMambaTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 }
 
 func runMambaTweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildMambaTweenChain(dtype)
+	goO, payload, err := buildMambaTweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -925,10 +935,12 @@ func runMambaTweenChain(dtype core.DType, exact bool) error {
 
 func caseEmbeddingTweenChainF32() error { return runEmbeddingTweenChain(core.DTypeFloat32, true) }
 func caseEmbeddingTweenChainAllDTypes() error {
-	return runTweenChainSpectrum("Embedding", buildEmbeddingTweenChain)
+	return runTweenChainSpectrum("Embedding", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildEmbeddingTweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildEmbeddingTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildEmbeddingTweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 
 	const batch, vocab, emb, seq = 2, 8, 4, 3
 	lr := 1e-2
@@ -952,7 +964,7 @@ func buildEmbeddingTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, seq, emb)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -976,7 +988,7 @@ func buildEmbeddingTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 }
 
 func runEmbeddingTweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildEmbeddingTweenChain(dtype)
+	goO, payload, err := buildEmbeddingTweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -989,10 +1001,12 @@ func runEmbeddingTweenChain(dtype core.DType, exact bool) error {
 
 func caseMHATweenChainF32() error { return runMHATweenChain(core.DTypeFloat32, true) }
 func caseMHATweenChainAllDTypes() error {
-	return runTweenChainSpectrum("MHA", buildMHATweenChain)
+	return runTweenChainSpectrum("MHA", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildMHATweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildMHATweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildMHATweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 
 	cfg := mha.DecoderCausal(8, 2, 2)
 	cfg.MaxSeqLen = 16
@@ -1016,7 +1030,7 @@ func buildMHATweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 	copy(xin.Data, fc.x)
 	target := core.NewTensor[float32](batch, seq, c.DModel)
 	copy(target.Data, fc.target)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, fc.lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, fc.lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1047,7 +1061,7 @@ func buildMHATweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 }
 
 func runMHATweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildMHATweenChain(dtype)
+	goO, payload, err := buildMHATweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -1060,10 +1074,12 @@ func runMHATweenChain(dtype core.DType, exact bool) error {
 
 func caseCNN1TweenChainF32() error { return runCNN1TweenChain(core.DTypeFloat32, true) }
 func caseCNN1TweenChainAllDTypes() error {
-	return runTweenChainSpectrum("CNN1", buildCNN1TweenChain)
+	return runTweenChainSpectrum("CNN1", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildCNN1TweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildCNN1TweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildCNN1TweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 
 	cfg := preservingCNN1()
 	const batch = 2
@@ -1091,7 +1107,7 @@ func buildCNN1TweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, cfg.Filters, outLen)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1119,7 +1135,7 @@ func buildCNN1TweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 }
 
 func runCNN1TweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildCNN1TweenChain(dtype)
+	goO, payload, err := buildCNN1TweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -1132,10 +1148,12 @@ func runCNN1TweenChain(dtype core.DType, exact bool) error {
 
 func caseConvT1TweenChainF32() error { return runConvT1TweenChain(core.DTypeFloat32, true) }
 func caseConvT1TweenChainAllDTypes() error {
-	return runTweenChainSpectrum("ConvT1", buildConvT1TweenChain)
+	return runTweenChainSpectrum("ConvT1", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildConvT1TweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildConvT1TweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildConvT1TweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 
 	cfg := preservingConvT1()
 	const batch = 2
@@ -1163,7 +1181,7 @@ func buildConvT1TweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, cfg.Filters, outLen)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1192,7 +1210,7 @@ func buildConvT1TweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 }
 
 func runConvT1TweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildConvT1TweenChain(dtype)
+	goO, payload, err := buildConvT1TweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -1205,10 +1223,12 @@ func runConvT1TweenChain(dtype core.DType, exact bool) error {
 
 func caseRNNTweenChainF32() error { return runRNNTweenChain(core.DTypeFloat32, true) }
 func caseRNNTweenChainAllDTypes() error {
-	return runTweenChainSpectrum("RNN", buildRNNTweenChain)
+	return runTweenChainSpectrum("RNN", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildRNNTweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildRNNTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildRNNTweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 
 	cfg := smokeRNNCfg()
 	const batch = 2
@@ -1233,7 +1253,7 @@ func buildRNNTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, cfg.SeqLen, cfg.HiddenSize)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1257,7 +1277,7 @@ func buildRNNTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 }
 
 func runRNNTweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildRNNTweenChain(dtype)
+	goO, payload, err := buildRNNTweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -1270,10 +1290,12 @@ func runRNNTweenChain(dtype core.DType, exact bool) error {
 
 func caseLSTMTweenChainF32() error { return runLSTMTweenChain(core.DTypeFloat32, true) }
 func caseLSTMTweenChainAllDTypes() error {
-	return runTweenChainSpectrum("LSTM", buildLSTMTweenChain)
+	return runTweenChainSpectrum("LSTM", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildLSTMTweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildLSTMTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildLSTMTweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 
 	cfg := smokeLSTMCfg()
 	const batch = 2
@@ -1298,7 +1320,7 @@ func buildLSTMTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, cfg.SeqLen, cfg.HiddenSize)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1322,7 +1344,7 @@ func buildLSTMTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 }
 
 func runLSTMTweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildLSTMTweenChain(dtype)
+	goO, payload, err := buildLSTMTweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -1484,7 +1506,6 @@ func runGoDenseTweenChainVol(depth, rows, cols, lpc, batch int, cells []volCell,
 	return z, nil
 }
 
-
 func runDenseTweenChainVolCase(depth, rows, cols, lpc, batch, benchIters int) error {
 	stack := depth * rows * cols * lpc
 	dim := 4
@@ -1550,10 +1571,12 @@ func caseMetacognitionTweenChainF32() error {
 }
 
 func caseMetacognitionTweenChainAllDTypes() error {
-	return runTweenChainSpectrum("Metacognition", buildMetacognitionTweenChain)
+	return runTweenChainSpectrum("Metacognition", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildMetacognitionTweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildMetacognitionTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildMetacognitionTweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 	cfg, batch, seq, packed, x, tgt, lr, err := makeMcModeLeaf(dtype, 0x4d435450^uint32(dtype)*0x9e3779b9)
 	if err != nil {
 		return tweenChainOut{}, nil, err
@@ -1566,7 +1589,7 @@ func buildMetacognitionTweenChain(dtype core.DType) (tweenChainOut, []byte, erro
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, seq, cfg.Dim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1584,7 +1607,7 @@ func buildMetacognitionTweenChain(dtype core.DType) (tweenChainOut, []byte, erro
 }
 
 func runMetacognitionTweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildMetacognitionTweenChain(dtype)
+	goO, payload, err := buildMetacognitionTweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -1599,7 +1622,7 @@ func caseGDNTweenChainF32() error {
 	return runGDNTweenChain(true)
 }
 
-func buildGDNTweenChain() (tweenChainOut, []byte, error) {
+func buildGDNTweenChain(mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 	cfg, batch, seq, packed, x, tgt, lr, err := makeGdModeLeaf(0x47444e50)
 	if err != nil {
 		return tweenChainOut{}, nil, err
@@ -1612,7 +1635,7 @@ func buildGDNTweenChain() (tweenChainOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, seq, cfg.HiddenSize)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1630,7 +1653,7 @@ func buildGDNTweenChain() (tweenChainOut, []byte, error) {
 }
 
 func runGDNTweenChain(exact bool) error {
-	goO, payload, err := buildGDNTweenChain()
+	goO, payload, err := buildGDNTweenChain(parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -1646,10 +1669,12 @@ func caseNestedStackTweenChainF32() error {
 }
 
 func caseNestedStackTweenChainAllDTypes() error {
-	return runTweenChainSpectrum("NestedStack", buildNestedStackTweenChain)
+	return runTweenChainSpectrum("NestedStack", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildNestedStackTweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildNestedStackTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildNestedStackTweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 	dim, nChildren, batch, seq, packed, x, tgt, lr, err := makeStModeLeaf(dtype, 0x53544b50^uint32(dtype)*0x9e3779b9)
 	if err != nil {
 		return tweenChainOut{}, nil, err
@@ -1662,7 +1687,7 @@ func buildNestedStackTweenChain(dtype core.DType) (tweenChainOut, []byte, error)
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch*seq, dim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1681,7 +1706,7 @@ func buildNestedStackTweenChain(dtype core.DType) (tweenChainOut, []byte, error)
 }
 
 func runNestedStackTweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildNestedStackTweenChain(dtype)
+	goO, payload, err := buildNestedStackTweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -1699,10 +1724,12 @@ func caseKMeansTweenChainF32() error {
 }
 
 func caseKMeansTweenChainAllDTypes() error {
-	return runTweenChainSpectrum("KMeans", buildKMeansTweenChain)
+	return runTweenChainSpectrum("KMeans", func(dt core.DType) (tweenChainOut, []byte, error) {
+		return buildKMeansTweenChain(dt, parallel.ModeTweenChain)
+	})
 }
 
-func buildKMeansTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
+func buildKMeansTweenChain(dtype core.DType, mode parallel.TrainMode) (tweenChainOut, []byte, error) {
 	cfg, batch, seq, packed, x, tgt, lr, err := makeKmModeLeaf(dtype, 0x4b4d5450^uint32(dtype)*0x9e3779b9)
 	if err != nil {
 		return tweenChainOut{}, nil, err
@@ -1716,7 +1743,7 @@ func buildKMeansTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 	copy(xin.Data, x)
 	target := core.NewTensor[float32](batch, seq, outDim)
 	copy(target.Data, tgt)
-	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenChain, lr)
+	loss, err := parallel.TrainStackMSE(st, xin, target, mode, lr)
 	if err != nil {
 		return tweenChainOut{}, nil, fmt.Errorf("go: %w", err)
 	}
@@ -1734,7 +1761,7 @@ func buildKMeansTweenChain(dtype core.DType) (tweenChainOut, []byte, error) {
 }
 
 func runKMeansTweenChain(dtype core.DType, exact bool) error {
-	goO, payload, err := buildKMeansTweenChain(dtype)
+	goO, payload, err := buildKMeansTweenChain(dtype, parallel.ModeTweenChain)
 	if err != nil {
 		return err
 	}
@@ -1744,4 +1771,3 @@ func runKMeansTweenChain(dtype core.DType, exact bool) error {
 	}
 	return compareTweenChain(goO, cppO, exact)
 }
-

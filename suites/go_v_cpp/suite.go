@@ -78,7 +78,8 @@ func Cases() []Case {
 	out = append(out, CasesSequentialTrain()...)
 	out = append(out, CasesResidualTrain()...)
 	out = append(out, CasesMambaTrain()...)
-	return append(out, CasesStepBPTrain()...)
+	out = append(out, CasesStepBPTrain()...)
+	return append(out, CasesTweenTrain()...)
 }
 
 func RunAll() error {

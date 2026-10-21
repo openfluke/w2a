@@ -3,7 +3,6 @@ package go_v_cpp
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/core"
@@ -110,14 +109,14 @@ func RunMemoryTrain() error {
 func caseMemoryAlwaysF32() error {
 	modes := []parallel.TrainMode{parallel.ModeMemory, parallel.ModeNormalBP}
 	kit := parallel.CamKit{SurpriseThresh: 0} // always train
-	return runCameralModesCase("MMB1", "MMBO", modes, kit, core.DTypeFloat32, true, 40)
+	return runCameralModesCase("MMB1", "MMBO", modes, kit, core.DTypeFloat32, true, defaultGoBenchIters)
 }
 
 func caseMemoryBlockedF32() error {
 	// Huge thresh ⇒ LastLoss < thresh ⇒ Memory cam skips; NormalBP cam still updates.
 	modes := []parallel.TrainMode{parallel.ModeMemory, parallel.ModeNormalBP}
 	kit := parallel.CamKit{SurpriseThresh: 1e9}
-	return runCameralModesCase("MMB1", "MMBO", modes, kit, core.DTypeFloat32, true, 40)
+	return runCameralModesCase("MMB1", "MMBO", modes, kit, core.DTypeFloat32, true, defaultGoBenchIters)
 }
 
 func caseMemoryAlwaysAllDTypes() error {
@@ -153,7 +152,7 @@ func caseDenseMemoryMultiHopF32() error {
 }
 
 func caseDenseMemory1HopAllDTypes() error {
-	const in, out, batch, benchIters = 6, 4, 2, 20
+	const in, out, batch, benchIters = 6, 4, 2, defaultGoBenchIters
 	W, x, bias := makeSharedInit(out, in, batch)
 	tgt := make([]float32, batch*out)
 	for i := range tgt {
@@ -165,9 +164,7 @@ func caseDenseMemory1HopAllDTypes() error {
 		ch := []denseStepChild{{in: in, out: out, act: core.ActivationLinear, W: append([]float32(nil), W...), bias: append([]float64(nil), bias...)}}
 		tx := [][]float32{append([]float32(nil), x...)}
 		tt := [][]float32{append([]float32(nil), tgt...)}
-		t0 := time.Now()
 		goO, err := runGoDenseTweenChain(dt, 1e-2, ch, batch, tx, tt, parallel.ModeMemory)
-		goDur := time.Since(t0)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s go:%v", dt, err))
 			continue
@@ -184,11 +181,18 @@ func caseDenseMemory1HopAllDTypes() error {
 			continue
 		}
 		m := suites.CompareF32Spectrum(goO.WAfter[0], cppO.WAfter[0])
-		goUS := float64(goDur.Nanoseconds()) / 1000
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, berr := benchGoUS(func() error {
+			_, err := runGoDenseTweenChain(dt, 1e-2, ch, batch, tx, tt, parallel.ModeMemory)
+			return err
+		}, benchIters)
+		if berr != nil {
+			fails = append(fails, fmt.Sprintf("%s go-bench:%v", dt, berr))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spd := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %8.1f%%\n",
-			dt, m.Band, m.ExactPct, goUS, cppUS, spd)
+		fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %8.1f%%\n",
+			dt, m.Band, m.ExactPct, FormatUS(goUS), FormatUS(cppUS), spd)
 		if err := compareTweenChain(goO, cppO, true); err != nil {
 			fails = append(fails, fmt.Sprintf("%s:%v", dt, err))
 		}

@@ -1352,7 +1352,7 @@ func compareTweenVolFastProxy(goO, cppO nbpVolOut) error {
 }
 
 func caseRMSNormTweenSplitFastProxyVol222F32() error {
-	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 2, 2, 1, 1, 4, 40
+	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 2, 2, 1, 1, 4, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gamma, x := makeRMSGammaInit(dim, batch)
 	target := make([]float32, dim)
@@ -1390,7 +1390,7 @@ func caseRMSNormTweenSplitFastProxyVol222F32() error {
 }
 
 func caseLayerNormTweenSplitFastProxyVol222F32() error {
-	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 2, 2, 1, 1, 4, 40
+	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 2, 2, 1, 1, 4, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gamma, beta, x := makeLNAffineInit(dim, batch)
 	target := make([]float32, dim)
@@ -1428,7 +1428,7 @@ func caseLayerNormTweenSplitFastProxyVol222F32() error {
 }
 
 func caseSwiGLUTweenSplitFastProxyVol222F32() error {
-	const depth, rows, cols, lpc, batch, in, inter, benchIters = 2, 2, 2, 1, 1, 4, 8, 40
+	const depth, rows, cols, lpc, batch, in, inter, benchIters = 2, 2, 2, 1, 1, 4, 8, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gate, up, down, x := makeSwiGLUTrainInit(in, inter, batch, 0x53574924)
 	scaleSwiGLU(gate, up, down, x, 0.05)
@@ -1468,7 +1468,7 @@ func caseSwiGLUTweenSplitFastProxyVol222F32() error {
 }
 
 func caseSoftmaxTweenSplitFastProxyVol222F32() error {
-	const batch, dim, benchIters = 1, 4, 20
+	const batch, dim, benchIters = 1, 4, defaultGoBenchIters
 	// scale logits so chained Softmax stays numerically calm
 	x := smbpRandInit(batch, dim, 0x534d5637)
 	for i := range x {
@@ -1505,7 +1505,7 @@ func caseSoftmaxTweenSplitFastProxyVol222F32() error {
 }
 
 func caseEmbeddingTweenSplitFastProxyVol222F32() error {
-	const batch, vocab, emb, seq, benchIters = 1, 8, 4, 2, 20
+	const batch, vocab, emb, seq, benchIters = 1, 8, 4, 2, defaultGoBenchIters
 	x := tokenIDs(batch*seq, vocab, 0x454d5637)
 	target := make([]float32, batch*seq*emb)
 	for i := range target {
@@ -1544,7 +1544,7 @@ func caseEmbeddingTweenSplitFastProxyVol222F32() error {
 }
 
 func caseMHATweenSplitFastProxyVol222F32() error {
-	const batch, seq, benchIters = 1, 2, 20
+	const batch, seq, benchIters = 1, 2, defaultGoBenchIters
 	cfg := mha.DecoderCausal(16, 2, 2)
 	cfg.MaxSeqLen = 32
 	x := randInit(batch*seq, cfg.DModel, 0x4d485638)
@@ -1588,7 +1588,7 @@ func caseMHATweenSplitFastProxyVol222F32() error {
 }
 
 func caseRNNTweenSplitFastProxyVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, 20
+	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volRNNCfg()
@@ -1635,7 +1635,7 @@ func caseRNNTweenSplitFastProxyVol222F32() error {
 }
 
 func caseLSTMTweenSplitFastProxyVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, 20
+	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volLSTMCfg()
@@ -1682,7 +1682,7 @@ func caseLSTMTweenSplitFastProxyVol222F32() error {
 }
 
 func caseSeqTweenSplitFastProxyVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, 20
+	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volSeqCfg()
@@ -1729,7 +1729,7 @@ func caseSeqTweenSplitFastProxyVol222F32() error {
 }
 
 func caseReTweenSplitFastProxyVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, 20
+	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volReCfg()
@@ -1776,7 +1776,7 @@ func caseReTweenSplitFastProxyVol222F32() error {
 }
 
 func caseMbTweenSplitFastProxyVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, 20
+	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volMbCfg()

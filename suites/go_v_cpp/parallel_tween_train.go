@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/core"
@@ -160,7 +159,7 @@ func runParallelTweenFamilyCase(magic, outMagic string, parent parallel.TrainMod
 }
 
 func runParallelTweenFamilySpectrum(label, magic, outMagic string, parent parallel.TrainMode, seedBase uint32) error {
-	const benchIters = 20
+	const benchIters = defaultGoBenchIters
 	fmt.Printf("\n      [Parallel %s Add ×34]\n", label)
 	fmt.Printf("      %-12s %-12s %8s %10s %10s %9s\n", "dtype", "band", "exact%W", "goµs", "cppµs", "spd%Δ")
 	var fails []string
@@ -168,13 +167,11 @@ func runParallelTweenFamilySpectrum(label, magic, outMagic string, parent parall
 	const batch, dim, outFeat, branches = 2, 4, 4, 2
 	const lr = 1e-2
 	for _, dt := range core.AllDTypes {
-		t0 := time.Now()
 		err := runParallelTweenFamilyCase(magic, outMagic, parent, parallel.CombineAdd, dt, true, 0, seedBase)
-		goDur := time.Since(t0)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s:%v", dt, err))
-			fmt.Printf("      %-12s %-12s %7s %10.2f %10s %8s  %v\n", dt, suites.DetBroken, "—",
-				float64(goDur.Nanoseconds())/1000, "—", "—", err)
+			fmt.Printf("      %-12s %-12s %7s %10s %10s %8s  %v\n", dt, suites.DetBroken, "—",
+				"—", "—", "—", err)
 			continue
 		}
 		packed := randInit(1, branches*outFeat*dim, seedBase)
@@ -198,11 +195,18 @@ func runParallelTweenFamilySpectrum(label, magic, outMagic string, parent parall
 		goO, _ := runGoParallelTweenFamily(dt, batch, dim, outFeat, branches, packed, x, target, lr, modes, parallel.CombineAdd, parent)
 		cppO, _, _ := runCppCameralModes(payload, outMagic, 0)
 		m := suites.CompareF32Spectrum(goO.WAfter[0], cppO.WAfter[0])
-		goUS := float64(goDur.Nanoseconds()) / 1000
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, berr := benchGoUS(func() error {
+			_, err := runGoParallelTweenFamily(dt, batch, dim, outFeat, branches, packed, x, target, lr, modes, parallel.CombineAdd, parent)
+			return err
+		}, benchIters)
+		if berr != nil {
+			fails = append(fails, fmt.Sprintf("%s go-bench:%v", dt, berr))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spd := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %8.1f%%\n",
-			dt, m.Band, m.ExactPct, goUS, cppUS, spd)
+		fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %8.1f%%\n",
+			dt, m.Band, m.ExactPct, FormatUS(goUS), FormatUS(cppUS), spd)
 	}
 	if len(fails) > 0 {
 		return fmt.Errorf("dtype fails: %s", joinFails(fails))

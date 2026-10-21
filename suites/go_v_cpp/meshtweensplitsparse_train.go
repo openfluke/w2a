@@ -365,26 +365,30 @@ func runDenseMeshTweenSplitSparseCase(depth, rows, cols, lpc, batch, ticks, benc
 	if err := compareMeshTweenSplitSparseSparse(goO, cppO, true); err != nil {
 		return err
 	}
-	t0 := time.Now()
-	_, _ = runGoDenseMeshTweenSplitSparseSparse(depth, rows, cols, lpc, batch, ticks, cells, x, target, 1e-2)
-	goUS := float64(time.Since(t0).Nanoseconds()) / 1000
+	goUS, err := benchGoUS(func() error {
+		_, _ = runGoDenseMeshTweenSplitSparseSparse(depth, rows, cols, lpc, batch, ticks, cells, x, target, 1e-2)
+		return nil
+	}, defaultGoBenchIters)
+	if err != nil {
+		return err
+	}
 	bi := benchIters
 	if bi < 1 {
 		bi = 1
 	}
 	cppUS := float64(cppDur.Nanoseconds()) / float64(bi) / 1000
 	spd := suites.SpeedPctDiff(goUS, cppUS)
-	fmt.Printf("\n      MeshTweenSplitSparse %dx%dx%dx%d ticks=%d loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		depth, rows, cols, lpc, ticks, goO.loss, goUS, cppUS, spd)
+	fmt.Printf("\n      MeshTweenSplitSparse %dx%dx%dx%d ticks=%d loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		depth, rows, cols, lpc, ticks, goO.loss, FormatUS(goUS), FormatUS(cppUS), spd)
 	return nil
 }
 
 func caseDenseMeshTweenSplitSparseSparse111F32() error {
-	return runDenseMeshTweenSplitSparseCase(1, 1, 1, 1, 1, 1, 40)
+	return runDenseMeshTweenSplitSparseCase(1, 1, 1, 1, 1, 1, defaultGoBenchIters)
 }
 func caseDenseMeshTweenSplitSparseSparse211F32() error {
-	return runDenseMeshTweenSplitSparseCase(2, 1, 1, 1, 1, 2, 40)
+	return runDenseMeshTweenSplitSparseCase(2, 1, 1, 1, 1, 2, defaultGoBenchIters)
 }
 func caseDenseMeshTweenSplitSparseSparse222F32() error {
-	return runDenseMeshTweenSplitSparseCase(2, 2, 2, 1, 1, 8, 20)
+	return runDenseMeshTweenSplitSparseCase(2, 2, 2, 1, 1, 8, defaultGoBenchIters)
 }

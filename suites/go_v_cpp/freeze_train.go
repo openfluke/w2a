@@ -247,14 +247,12 @@ func compareFreeze(goO, cppO freezeOut, requireExact bool) error {
 
 // runFreezeSpectrum prints Dense-style dtype×speed table then requires exact_bit on each.
 func runFreezeSpectrum(label string, build func(core.DType) (freezeOut, []byte, error)) error {
-	const benchIters = 20
+	const benchIters = defaultGoBenchIters
 	fmt.Printf("\n      [%s Tween ×34]\n", label)
 	fmt.Printf("      %-12s %-12s %8s %10s %10s %9s\n", "dtype", "band", "exact%W", "goµs", "cppµs", "spd%Δ")
 	var fails []string
 	for _, dt := range core.AllDTypes {
-		t0 := time.Now()
 		goO, payload, err := build(dt)
-		goDur := time.Since(t0)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s go:%v", dt, err))
 			fmt.Printf("      %-12s %-12s %7s %10s %10s %8s  %v\n", dt, suites.DetBroken, "—", "—", "—", "—", err)
@@ -263,13 +261,13 @@ func runFreezeSpectrum(label string, build func(core.DType) (freezeOut, []byte, 
 		_, cppDur, err := runCppFRB1(payload, benchIters)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s cpp-bench:%v", dt, err))
-			fmt.Printf("      %-12s %-12s %7s %10.2f %10s %8s  %v\n", dt, suites.DetBroken, "—", float64(goDur.Nanoseconds())/1000, "—", "—", err)
+			fmt.Printf("      %-12s %-12s %7s %10s %10s %8s  %v\n", dt, suites.DetBroken, "—", "—", "—", "—", err)
 			continue
 		}
 		cppO, _, err := runCppFRB1(payload, 0)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s cpp:%v", dt, err))
-			fmt.Printf("      %-12s %-12s %7s %10.2f %10s %8s  %v\n", dt, suites.DetBroken, "—", float64(goDur.Nanoseconds())/1000, "—", "—", err)
+			fmt.Printf("      %-12s %-12s %7s %10s %10s %8s  %v\n", dt, suites.DetBroken, "—", "—", "—", "—", err)
 			continue
 		}
 		var m suites.DetMetrics
@@ -283,11 +281,18 @@ func runFreezeSpectrum(label string, build func(core.DType) (freezeOut, []byte, 
 				m.ExactPct = 0
 			}
 		}
-		goUS := float64(goDur.Nanoseconds()) / 1000
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, berr := benchGoUS(func() error {
+			_, _, err := build(dt)
+			return err
+		}, benchIters)
+		if berr != nil {
+			fails = append(fails, fmt.Sprintf("%s go-bench:%v", dt, berr))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spd := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %8.1f%%\n",
-			dt, m.Band, m.ExactPct, goUS, cppUS, spd)
+		fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %8.1f%%\n",
+			dt, m.Band, m.ExactPct, FormatUS(goUS), FormatUS(cppUS), spd)
 		if err := compareFreeze(goO, cppO, true); err != nil {
 			fails = append(fails, fmt.Sprintf("%s:%v", dt, err))
 		}
@@ -404,7 +409,7 @@ func caseDenseFreezeMultiHopF32() error {
 }
 
 func caseDenseFreeze1HopAllDTypes() error {
-	const in, out, batch, benchIters = 6, 4, 2, 20
+	const in, out, batch, benchIters = 6, 4, 2, defaultGoBenchIters
 	W, x, bias := makeSharedInit(out, in, batch)
 	tgt := make([]float32, batch*out)
 	for i := range tgt {
@@ -419,9 +424,7 @@ func caseDenseFreeze1HopAllDTypes() error {
 		ch := []denseStepChild{{in: in, out: out, act: core.ActivationLinear, W: append([]float32(nil), W...), bias: append([]float64(nil), bias...)}}
 		tx := [][]float32{append([]float32(nil), x...)}
 		tt := [][]float32{append([]float32(nil), tgt...)}
-		t0 := time.Now()
 		goO, err := runGoDenseFreeze(dt, 1e-2, ch, batch, tx, tt, parallel.ModeFreeze)
-		goDur := time.Since(t0)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s go:%v", dt, err))
 			continue
@@ -439,11 +442,18 @@ func caseDenseFreeze1HopAllDTypes() error {
 			continue
 		}
 		m := suites.CompareF32Spectrum(goO.WAfter[0], cppO.WAfter[0])
-		goUS := float64(goDur.Nanoseconds()) / 1000
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, berr := benchGoUS(func() error {
+			_, err := runGoDenseFreeze(dt, 1e-2, ch, batch, tx, tt, parallel.ModeFreeze)
+			return err
+		}, benchIters)
+		if berr != nil {
+			fails = append(fails, fmt.Sprintf("%s go-bench:%v", dt, berr))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spd := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %8.1f%%\n",
-			dt, m.Band, m.ExactPct, goUS, cppUS, spd)
+		fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %8.1f%%\n",
+			dt, m.Band, m.ExactPct, FormatUS(goUS), FormatUS(cppUS), spd)
 		if err := compareFreeze(goO, cppO, false); err != nil {
 			fails = append(fails, fmt.Sprintf("%s:%v", dt, err))
 		}
@@ -1551,23 +1561,27 @@ func runDenseFreezeVolCase(depth, rows, cols, lpc, batch, benchIters int) error 
 	if err := compareMeshBP(goO, cppO, true); err != nil {
 		return err
 	}
-	t0 := time.Now()
-	_, _ = runGoDenseFreezeVol(depth, rows, cols, lpc, batch, cells, x, target, 1e-2)
-	goUS := float64(time.Since(t0).Nanoseconds()) / 1000
+	goUS, err := benchGoUS(func() error {
+		_, _ = runGoDenseFreezeVol(depth, rows, cols, lpc, batch, cells, x, target, 1e-2)
+		return nil
+	}, defaultGoBenchIters)
+	if err != nil {
+		return err
+	}
 	bi := benchIters
 	if bi < 1 {
 		bi = 1
 	}
 	cppUS := float64(cppDur.Nanoseconds()) / float64(bi) / 1000
 	spd := suites.SpeedPctDiff(goUS, cppUS)
-	fmt.Printf("\n      Tween vol %dx%dx%dx%d loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		depth, rows, cols, lpc, goO.loss, goUS, cppUS, spd)
+	fmt.Printf("\n      Tween vol %dx%dx%dx%d loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		depth, rows, cols, lpc, goO.loss, FormatUS(goUS), FormatUS(cppUS), spd)
 	return nil
 }
 
-func caseDenseFreezeVol111F32() error { return runDenseFreezeVolCase(1, 1, 1, 1, 1, 40) }
-func caseDenseFreezeVol211F32() error { return runDenseFreezeVolCase(2, 1, 1, 1, 1, 40) }
-func caseDenseFreezeVol222F32() error { return runDenseFreezeVolCase(2, 2, 2, 1, 1, 20) }
+func caseDenseFreezeVol111F32() error { return runDenseFreezeVolCase(1, 1, 1, 1, 1, defaultGoBenchIters) }
+func caseDenseFreezeVol211F32() error { return runDenseFreezeVolCase(2, 1, 1, 1, 1, defaultGoBenchIters) }
+func caseDenseFreezeVol222F32() error { return runDenseFreezeVolCase(2, 2, 2, 1, 1, defaultGoBenchIters) }
 
 // --- CASCADE Meta/GDN/Stack leaf (auto) ---
 

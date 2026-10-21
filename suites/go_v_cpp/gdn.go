@@ -263,7 +263,7 @@ func caseGdnAlt() error {
 }
 
 func caseGdnSpeed() error {
-	const batch, seq, benchIters = 2, 3, 20
+	const batch, seq, benchIters = 2, 3, defaultGoBenchIters
 	cfg := gdn.Config{
 		HiddenSize: 8, NumKeyHeads: 2, NumValueHeads: 4,
 		KeyHeadDim: 4, ValueHeadDim: 4, ConvKernel: 4, Eps: 1e-6,
@@ -298,27 +298,21 @@ func caseGdnSpeed() error {
 	fmt.Printf("      %-12s %-12s %8s %8s %10s %10s %9s %s\n",
 		"dtype", "band", "exact%", "spect%", "go_µs", "cpp_µs", "spd%Δ", "max|Δ|")
 	fmt.Printf("      %s\n", strings.Repeat("-", 88))
-	for i := 0; i < 2; i++ {
-		if _, _, err := runGoGdn(fc); err != nil {
-			break
-		}
+	goUS, err := benchGoUS(func() error {
+		_, _, err := runGoGdn(fc)
+		return err
+	}, benchIters)
+	if err != nil {
+		return fmt.Errorf("go bench: %w", err)
 	}
-	t0 := time.Now()
-	for i := 0; i < benchIters; i++ {
-		if _, _, err := runGoGdn(fc); err != nil {
-			return err
-		}
-	}
-	goDur := time.Since(t0)
 	_, _, cppDur, err := runCppGdn(payload, benchIters)
 	if err != nil {
 		return err
 	}
-	goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-	cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS := perIterUS(cppDur, benchIters)
 	spdPct := suites.SpeedPctDiff(goUS, cppUS)
-	fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10.2f %+8.1f%% %s\n",
-		"float32", m.Band, m.ExactPct, m.Band.Percent(), goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+	fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %+8.1f%% %s\n",
+		"float32", m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 	fmt.Printf("      %s\n", strings.Repeat("-", 88))
 	fmt.Printf("      aim=exact_bit (100%%); Go GDN is Float32 FormatNone only (not ×34)")
 	if m.Band != suites.DetExactBit {

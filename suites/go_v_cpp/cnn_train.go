@@ -478,7 +478,7 @@ func makeCNNLeafCase(tier, batch int, dt core.DType, seed uint32, smoke bool) (c
 }
 
 func caseCNNNBPLeafF32(tier int) error {
-	const benchIters = 40
+	const benchIters = defaultGoBenchIters
 	batch := 1
 	if tier == 1 {
 		batch = 2
@@ -498,32 +498,26 @@ func caseCNNNBPLeafF32(tier int) error {
 	if err := compareNBP(goO, cppO, true); err != nil {
 		return err
 	}
-	for i := 0; i < 3; i++ {
-		if _, err := runGoCNNNBP(fc); err != nil {
-			return err
-		}
+	goUS, err := benchGoUS(func() error {
+		_, err := runGoCNNNBP(fc)
+		return err
+	}, benchIters)
+	if err != nil {
+		return fmt.Errorf("go bench: %w", err)
 	}
-	t0 := time.Now()
-	for i := 0; i < benchIters; i++ {
-		if _, err := runGoCNNNBP(fc); err != nil {
-			return err
-		}
-	}
-	goDur := time.Since(t0)
 	_, cppDur, err := runCppCNNNBPBench(fc, benchIters)
 	if err != nil {
 		return fmt.Errorf("cpp bench: %w", err)
 	}
-	goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-	cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS := perIterUS(cppDur, benchIters)
 	spdPct := suites.SpeedPctDiff(goUS, cppUS)
-	fmt.Printf("\n      loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
 func caseCNNNBPLeafAllDTypes(tier int) error {
-	const benchIters = 20
+	const benchIters = defaultGoBenchIters
 	batch := 1
 	var fails []string
 	worst := suites.DetExactBit
@@ -559,32 +553,25 @@ func caseCNNNBPLeafAllDTypes(tier int) error {
 		if band.Percent() < worst.Percent() {
 			worst = band
 		}
-		for i := 0; i < 3; i++ {
-			if _, err := runGoCNNNBP(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go warm: %v", dt, err))
-				break
-			}
-		}
-		t0 := time.Now()
-		for i := 0; i < benchIters; i++ {
-			if _, err := runGoCNNNBP(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
-				break
-			}
-		}
-		goDur := time.Since(t0)
-		_, cppDur, err := runCppCNNNBPBench(fc, benchIters)
-		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, err := benchGoUS(func() error {
+			_, err := runGoCNNNBP(fc)
+			return err
+		}, benchIters)
 		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
-			fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10s %9s %s\n",
-				dt, band, mW.ExactPct, goUS, "?", "?", fmt.Sprintf("%.3g", mW.MaxAbs))
+			fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
 			continue
 		}
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		_, cppDur, err := runCppCNNNBPBench(fc, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %9s %s\n",
+				dt, band, mW.ExactPct, FormatUS(goUS), "?", "?", fmt.Sprintf("%.3g", mW.MaxAbs))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spdPct := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, band, mW.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", mW.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %+8.1f%% %s\n",
+			dt, band, mW.ExactPct, FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", mW.MaxAbs))
 		if band != suites.DetExactBit {
 			fails = append(fails, fmt.Sprintf("%s: %s", dt, band))
 		}
@@ -1094,24 +1081,18 @@ func benchCNN1VolNBP(depth, rows, cols, lpc, batch int, cells []cnn1VolCell, x, 
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	for i := 0; i < 3; i++ {
-		if _, err := runGoCNN1VolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
+	goUS, err = benchGoUS(func() error {
+		_, err := runGoCNN1VolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+		return err
+	}, benchIters)
+	if err != nil {
+		return 0, 0, 0, err
 	}
-	t0 := time.Now()
-	for i := 0; i < benchIters; i++ {
-		if _, err := runGoCNN1VolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
-	}
-	goDur := time.Since(t0)
 	_, cppDur, err := runCppCNNVolNBPBench(1, payload, benchIters)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	goUS = float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-	cppUS = float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS = perIterUS(cppDur, benchIters)
 	spdPct = suites.SpeedPctDiff(goUS, cppUS)
 	return goUS, cppUS, spdPct, nil
 }
@@ -1121,24 +1102,18 @@ func benchCNN2VolNBP(depth, rows, cols, lpc, batch int, cells []cnn2VolCell, x, 
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	for i := 0; i < 3; i++ {
-		if _, err := runGoCNN2VolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
+	goUS, err = benchGoUS(func() error {
+		_, err := runGoCNN2VolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+		return err
+	}, benchIters)
+	if err != nil {
+		return 0, 0, 0, err
 	}
-	t0 := time.Now()
-	for i := 0; i < benchIters; i++ {
-		if _, err := runGoCNN2VolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
-	}
-	goDur := time.Since(t0)
 	_, cppDur, err := runCppCNNVolNBPBench(2, payload, benchIters)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	goUS = float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-	cppUS = float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS = perIterUS(cppDur, benchIters)
 	spdPct = suites.SpeedPctDiff(goUS, cppUS)
 	return goUS, cppUS, spdPct, nil
 }
@@ -1148,30 +1123,24 @@ func benchCNN3VolNBP(depth, rows, cols, lpc, batch int, cells []cnn3VolCell, x, 
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	for i := 0; i < 3; i++ {
-		if _, err := runGoCNN3VolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
+	goUS, err = benchGoUS(func() error {
+		_, err := runGoCNN3VolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+		return err
+	}, benchIters)
+	if err != nil {
+		return 0, 0, 0, err
 	}
-	t0 := time.Now()
-	for i := 0; i < benchIters; i++ {
-		if _, err := runGoCNN3VolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
-	}
-	goDur := time.Since(t0)
 	_, cppDur, err := runCppCNNVolNBPBench(3, payload, benchIters)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	goUS = float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-	cppUS = float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS = perIterUS(cppDur, benchIters)
 	spdPct = suites.SpeedPctDiff(goUS, cppUS)
 	return goUS, cppUS, spdPct, nil
 }
 
 func caseCNNNBPVol111F32(tier int) error {
-	const batch, benchIters = 1, 40
+	const batch, benchIters = 1, defaultGoBenchIters
 	const lr = 1e-2
 	switch tier {
 	case 1:
@@ -1205,8 +1174,8 @@ func caseCNNNBPVol111F32(tier int) error {
 		if err != nil {
 			return fmt.Errorf("bench: %w", err)
 		}
-		fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-			goO.loss, goUS, cppUS, spdPct)
+		fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+			goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 		return nil
 	case 2:
 		cfg := preservingCNN2()
@@ -1239,8 +1208,8 @@ func caseCNNNBPVol111F32(tier int) error {
 		if err != nil {
 			return fmt.Errorf("bench: %w", err)
 		}
-		fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-			goO.loss, goUS, cppUS, spdPct)
+		fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+			goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 		return nil
 	case 3:
 		cfg := preservingCNN3()
@@ -1273,8 +1242,8 @@ func caseCNNNBPVol111F32(tier int) error {
 		if err != nil {
 			return fmt.Errorf("bench: %w", err)
 		}
-		fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-			goO.loss, goUS, cppUS, spdPct)
+		fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+			goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 		return nil
 	default:
 		return fmt.Errorf("vol111 tier %d", tier)
@@ -1282,7 +1251,7 @@ func caseCNNNBPVol111F32(tier int) error {
 }
 
 func caseCNNNBPVolChain(tier int) error {
-	const batch, benchIters = 1, 40
+	const batch, benchIters = 1, defaultGoBenchIters
 	const lr = 1e-2
 	switch tier {
 	case 1:
@@ -1317,8 +1286,8 @@ func caseCNNNBPVolChain(tier int) error {
 		if err != nil {
 			return fmt.Errorf("bench: %w", err)
 		}
-		fmt.Printf("\n      1×1×1×2 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-			goO.loss, goUS, cppUS, spdPct)
+		fmt.Printf("\n      1×1×1×2 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+			goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 		return nil
 	case 2:
 		cfg := preservingCNN2()
@@ -1346,8 +1315,8 @@ func caseCNNNBPVolChain(tier int) error {
 		if err != nil {
 			return fmt.Errorf("bench: %w", err)
 		}
-		fmt.Printf("\n      1×1×1×2 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-			goO.loss, goUS, cppUS, spdPct)
+		fmt.Printf("\n      1×1×1×2 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+			goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 		return nil
 	case 3:
 		cfg := preservingCNN3()
@@ -1375,8 +1344,8 @@ func caseCNNNBPVolChain(tier int) error {
 		if err != nil {
 			return fmt.Errorf("bench: %w", err)
 		}
-		fmt.Printf("\n      1×1×1×2 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-			goO.loss, goUS, cppUS, spdPct)
+		fmt.Printf("\n      1×1×1×2 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+			goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 		return nil
 	default:
 		return fmt.Errorf("vol chain tier %d", tier)
@@ -1384,7 +1353,7 @@ func caseCNNNBPVolChain(tier int) error {
 }
 
 func caseCNNNBPVol111AllDTypes(tier int) error {
-	const batch, benchIters = 1, 40
+	const batch, benchIters = 1, defaultGoBenchIters
 	var fails []string
 	fmt.Printf("\n      CNN%d NBP vol 1×1×1×1 ×34\n", tier)
 	fmt.Printf("      %-12s %-12s %8s %10s %10s %9s %s\n",
@@ -1425,8 +1394,8 @@ func caseCNNNBPVol111AllDTypes(tier int) error {
 				continue
 			}
 			m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-			fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
-				dt, m.Band, m.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %+8.1f%% %s\n",
+				dt, m.Band, m.ExactPct, FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 		case 2:
 			cfg := preservingCNN2()
 			cell, err := makeCNN2VolCell(cfg, dt, 0x43321300)
@@ -1461,8 +1430,8 @@ func caseCNNNBPVol111AllDTypes(tier int) error {
 				continue
 			}
 			m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-			fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
-				dt, m.Band, m.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %+8.1f%% %s\n",
+				dt, m.Band, m.ExactPct, FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 		case 3:
 			cfg := preservingCNN3()
 			cell, err := makeCNN3VolCell(cfg, dt, 0x43331300)
@@ -1497,8 +1466,8 @@ func caseCNNNBPVol111AllDTypes(tier int) error {
 				continue
 			}
 			m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-			fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
-				dt, m.Band, m.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %+8.1f%% %s\n",
+				dt, m.Band, m.ExactPct, FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 		}
 	}
 	if len(fails) > 0 {
@@ -1508,7 +1477,7 @@ func caseCNNNBPVol111AllDTypes(tier int) error {
 }
 
 func caseCNNNBPVol222F32(tier int) error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, 40
+	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	switch tier {
@@ -1546,8 +1515,8 @@ func caseCNNNBPVol222F32(tier int) error {
 		if err != nil {
 			return fmt.Errorf("bench: %w", err)
 		}
-		fmt.Printf("\n      2×2×2×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-			goO.loss, goUS, cppUS, spdPct)
+		fmt.Printf("\n      2×2×2×1 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+			goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 		return nil
 	case 2:
 		cfg := preservingCNN2()
@@ -1583,8 +1552,8 @@ func caseCNNNBPVol222F32(tier int) error {
 		if err != nil {
 			return fmt.Errorf("bench: %w", err)
 		}
-		fmt.Printf("\n      2×2×2×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-			goO.loss, goUS, cppUS, spdPct)
+		fmt.Printf("\n      2×2×2×1 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+			goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 		return nil
 	case 3:
 		cfg := preservingCNN3()
@@ -1620,8 +1589,8 @@ func caseCNNNBPVol222F32(tier int) error {
 		if err != nil {
 			return fmt.Errorf("bench: %w", err)
 		}
-		fmt.Printf("\n      2×2×2×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-			goO.loss, goUS, cppUS, spdPct)
+		fmt.Printf("\n      2×2×2×1 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+			goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 		return nil
 	default:
 		return fmt.Errorf("vol222 tier %d", tier)
@@ -1629,7 +1598,7 @@ func caseCNNNBPVol222F32(tier int) error {
 }
 
 func caseCNNNBPVol211AllDTypes(tier int) error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 1, 1, 1, 1, 40
+	const depth, rows, cols, lpc, batch, benchIters = 2, 1, 1, 1, 1, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	var fails []string
 	fmt.Printf("\n      CNN%d NBP vol 2×1×1×1 ×34\n", tier)
@@ -1676,8 +1645,8 @@ func caseCNNNBPVol211AllDTypes(tier int) error {
 				continue
 			}
 			m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-			fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
-				dt, m.Band, m.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %+8.1f%% %s\n",
+				dt, m.Band, m.ExactPct, FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 		case 2:
 			cfg := preservingCNN2()
 			W := randInit(cfg.Filters, cfg.PatchDim(), 0x43322100)
@@ -1717,8 +1686,8 @@ func caseCNNNBPVol211AllDTypes(tier int) error {
 				continue
 			}
 			m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-			fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
-				dt, m.Band, m.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %+8.1f%% %s\n",
+				dt, m.Band, m.ExactPct, FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 		case 3:
 			cfg := preservingCNN3()
 			W := randInit(cfg.Filters, cfg.PatchDim(), 0x43332100)
@@ -1758,8 +1727,8 @@ func caseCNNNBPVol211AllDTypes(tier int) error {
 				continue
 			}
 			m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-			fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
-				dt, m.Band, m.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %+8.1f%% %s\n",
+				dt, m.Band, m.ExactPct, FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 		}
 	}
 	if len(fails) > 0 {

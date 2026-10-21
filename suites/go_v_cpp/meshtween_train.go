@@ -366,26 +366,30 @@ func runDenseMeshTweenCase(depth, rows, cols, lpc, batch, ticks, benchIters int)
 	if err := compareMeshTween(goO, cppO, true); err != nil {
 		return err
 	}
-	t0 := time.Now()
-	_, _ = runGoDenseMeshTween(depth, rows, cols, lpc, batch, ticks, cells, x, target, 1e-2)
-	goUS := float64(time.Since(t0).Nanoseconds()) / 1000
+	goUS, err := benchGoUS(func() error {
+		_, _ = runGoDenseMeshTween(depth, rows, cols, lpc, batch, ticks, cells, x, target, 1e-2)
+		return nil
+	}, defaultGoBenchIters)
+	if err != nil {
+		return err
+	}
 	bi := benchIters
 	if bi < 1 {
 		bi = 1
 	}
 	cppUS := float64(cppDur.Nanoseconds()) / float64(bi) / 1000
 	spd := suites.SpeedPctDiff(goUS, cppUS)
-	fmt.Printf("\n      MeshTween %dx%dx%dx%d ticks=%d loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		depth, rows, cols, lpc, ticks, goO.loss, goUS, cppUS, spd)
+	fmt.Printf("\n      MeshTween %dx%dx%dx%d ticks=%d loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		depth, rows, cols, lpc, ticks, goO.loss, FormatUS(goUS), FormatUS(cppUS), spd)
 	return nil
 }
 
 func caseDenseMeshTween111F32() error {
-	return runDenseMeshTweenCase(1, 1, 1, 1, 1, 1, 40)
+	return runDenseMeshTweenCase(1, 1, 1, 1, 1, 1, defaultGoBenchIters)
 }
 func caseDenseMeshTween211F32() error {
-	return runDenseMeshTweenCase(2, 1, 1, 1, 1, 2, 40)
+	return runDenseMeshTweenCase(2, 1, 1, 1, 1, 2, defaultGoBenchIters)
 }
 func caseDenseMeshTween222F32() error {
-	return runDenseMeshTweenCase(2, 2, 2, 1, 1, 8, 20)
+	return runDenseMeshTweenCase(2, 2, 2, 1, 1, 8, defaultGoBenchIters)
 }

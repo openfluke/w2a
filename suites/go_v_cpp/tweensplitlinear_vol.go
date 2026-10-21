@@ -1325,7 +1325,7 @@ func compareTweenVolLinear(goO, cppO nbpVolOut) error {
 }
 
 func caseRMSNormTweenSplitLinearVol222F32() error {
-	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 2, 2, 1, 1, 4, 40
+	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 2, 2, 1, 1, 4, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gamma, x := makeRMSGammaInit(dim, batch)
 	target := make([]float32, dim)
@@ -1363,7 +1363,7 @@ func caseRMSNormTweenSplitLinearVol222F32() error {
 }
 
 func caseLayerNormTweenSplitLinearVol222F32() error {
-	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 2, 2, 1, 1, 4, 40
+	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 2, 2, 1, 1, 4, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gamma, beta, x := makeLNAffineInit(dim, batch)
 	target := make([]float32, dim)
@@ -1401,7 +1401,7 @@ func caseLayerNormTweenSplitLinearVol222F32() error {
 }
 
 func caseSwiGLUTweenSplitLinearVol222F32() error {
-	const depth, rows, cols, lpc, batch, in, inter, benchIters = 2, 2, 2, 1, 1, 4, 8, 40
+	const depth, rows, cols, lpc, batch, in, inter, benchIters = 2, 2, 2, 1, 1, 4, 8, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gate, up, down, x := makeSwiGLUTrainInit(in, inter, batch, 0x53574924)
 	scaleSwiGLU(gate, up, down, x, 0.05)
@@ -1441,7 +1441,7 @@ func caseSwiGLUTweenSplitLinearVol222F32() error {
 }
 
 func caseSoftmaxTweenSplitLinearVol222F32() error {
-	const batch, dim, benchIters = 1, 4, 20
+	const batch, dim, benchIters = 1, 4, defaultGoBenchIters
 	// scale logits so chained Softmax stays numerically calm
 	x := smbpRandInit(batch, dim, 0x534d5637)
 	for i := range x {
@@ -1478,7 +1478,7 @@ func caseSoftmaxTweenSplitLinearVol222F32() error {
 }
 
 func caseEmbeddingTweenSplitLinearVol222F32() error {
-	const batch, vocab, emb, seq, benchIters = 1, 8, 4, 2, 20
+	const batch, vocab, emb, seq, benchIters = 1, 8, 4, 2, defaultGoBenchIters
 	x := tokenIDs(batch*seq, vocab, 0x454d5637)
 	target := make([]float32, batch*seq*emb)
 	for i := range target {
@@ -1517,7 +1517,7 @@ func caseEmbeddingTweenSplitLinearVol222F32() error {
 }
 
 func caseMHATweenSplitLinearVol222F32() error {
-	const batch, seq, benchIters = 1, 2, 20
+	const batch, seq, benchIters = 1, 2, defaultGoBenchIters
 	cfg := mha.DecoderCausal(16, 2, 2)
 	cfg.MaxSeqLen = 32
 	x := randInit(batch*seq, cfg.DModel, 0x4d485638)
@@ -1561,7 +1561,7 @@ func caseMHATweenSplitLinearVol222F32() error {
 }
 
 func caseRNNTweenSplitLinearVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, 20
+	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volRNNCfg()
@@ -1608,7 +1608,7 @@ func caseRNNTweenSplitLinearVol222F32() error {
 }
 
 func caseLSTMTweenSplitLinearVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, 20
+	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volLSTMCfg()
@@ -1655,7 +1655,7 @@ func caseLSTMTweenSplitLinearVol222F32() error {
 }
 
 func caseSeqTweenSplitLinearVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, 20
+	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volSeqCfg()
@@ -1702,7 +1702,7 @@ func caseSeqTweenSplitLinearVol222F32() error {
 }
 
 func caseReTweenSplitLinearVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, 20
+	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volReCfg()
@@ -1749,7 +1749,7 @@ func caseReTweenSplitLinearVol222F32() error {
 }
 
 func caseMbTweenSplitLinearVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, 20
+	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volMbCfg()

@@ -216,7 +216,7 @@ func caseLSTMSmoke() error {
 }
 
 func caseLSTMAllDTypes() error {
-	const batch, benchIters = 1, 20
+	const batch, benchIters = 1, defaultGoBenchIters
 	cfg := lstm.Config{InputSize: 4, HiddenSize: 3, SeqLen: 6}
 	if err := cfg.Validate(); err != nil {
 		return err
@@ -262,31 +262,25 @@ func caseLSTMAllDTypes() error {
 		}
 		exactN += m.ExactBits
 		totalN += m.N
-		for i := 0; i < 2; i++ {
-			if _, _, err := runGoLSTM(fc); err != nil {
-				break
-			}
-		}
-		t0 := time.Now()
-		for i := 0; i < benchIters; i++ {
-			if _, _, err := runGoLSTM(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
-				break
-			}
-		}
-		goDur := time.Since(t0)
-		_, _, cppDur, err := runCppLSTM(payload, benchIters)
-		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, err := benchGoUS(func() error {
+			_, _, err := runGoLSTM(fc)
+			return err
+		}, benchIters)
 		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
-			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10s %9s %s\n",
-				dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, "?", "?", fmt.Sprintf("%.3g", m.MaxAbs))
+			fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
 			continue
 		}
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		_, _, cppDur, err := runCppLSTM(payload, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
+			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %9s %s\n",
+				dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), "?", "?", fmt.Sprintf("%.3g", m.MaxAbs))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spdPct := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %+8.1f%% %s\n",
+			dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 		if m.Band != suites.DetExactBit {
 			fails = append(fails, fmt.Sprintf("%s: %s", dt, suites.FormatSpectrum(m)))
 		}

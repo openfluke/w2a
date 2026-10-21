@@ -165,7 +165,8 @@ func FormatSpectrum(m DetMetrics) string {
 // positive ⇒ other slower than ref; negative ⇒ other faster.
 // pct = (other - ref) / ref * 100
 func SpeedPctDiff(ref, other float64) float64 {
-	if ref <= 0 {
+	// Treat sub-picosecond refs as unmeasured (avoids spd%Δ=+0.0% when go printed 0.00µs).
+	if ref <= 1e-12 {
 		return 0
 	}
 	return (other - ref) / ref * 100

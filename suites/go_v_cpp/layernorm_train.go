@@ -296,7 +296,7 @@ func compareLayerNormNBP(goO, cppO lnbpLeafOut, requireExact bool) error {
 }
 
 func caseLayerNormNBPLeafF32() error {
-	const benchIters = 40
+	const benchIters = defaultGoBenchIters
 	fc := lnbpLeaf{
 		batch: 2, seq: 1, dim: 4, eps: 0,
 		dtype:  core.DTypeFloat32,
@@ -317,32 +317,26 @@ func caseLayerNormNBPLeafF32() error {
 	if err := compareLayerNormNBP(goO, cppO, true); err != nil {
 		return err
 	}
-	for i := 0; i < 3; i++ {
-		if _, err := runGoLayerNormNBP(fc); err != nil {
-			return err
-		}
+	goUS, err := benchGoUS(func() error {
+		_, err := runGoLayerNormNBP(fc)
+		return err
+	}, benchIters)
+	if err != nil {
+		return fmt.Errorf("go bench: %w", err)
 	}
-	t0 := time.Now()
-	for i := 0; i < benchIters; i++ {
-		if _, err := runGoLayerNormNBP(fc); err != nil {
-			return err
-		}
-	}
-	goDur := time.Since(t0)
 	_, cppDur, err := runCppLayerNormNBPBench(fc, benchIters)
 	if err != nil {
 		return fmt.Errorf("cpp bench: %w", err)
 	}
-	goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-	cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS := perIterUS(cppDur, benchIters)
 	spdPct := suites.SpeedPctDiff(goUS, cppUS)
-	fmt.Printf("\n      loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%  (neg ⇒ C++ faster)",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%  (neg ⇒ C++ faster)",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
 func caseLayerNormNBPLeafAllDTypes() error {
-	const dim, batch, seq, benchIters = 8, 2, 1, 40
+	const dim, batch, seq, benchIters = 8, 2, 1, defaultGoBenchIters
 	gamma, beta, x := makeLNAffineInit(dim, batch)
 	target := make([]float32, batch*dim)
 	for i := range target {
@@ -382,32 +376,25 @@ func caseLayerNormNBPLeafAllDTypes() error {
 		if band.Percent() < worst.Percent() {
 			worst = band
 		}
-		for i := 0; i < 3; i++ {
-			if _, err := runGoLayerNormNBP(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go warm: %v", dt, err))
-				break
-			}
-		}
-		t0 := time.Now()
-		for i := 0; i < benchIters; i++ {
-			if _, err := runGoLayerNormNBP(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
-				break
-			}
-		}
-		goDur := time.Since(t0)
-		_, cppDur, err := runCppLayerNormNBPBench(fc, benchIters)
-		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, err := benchGoUS(func() error {
+			_, err := runGoLayerNormNBP(fc)
+			return err
+		}, benchIters)
 		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
-			fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10s %9s %s\n",
-				dt, band, mG.ExactPct, goUS, "?", "?", fmt.Sprintf("%.3g", mG.MaxAbs))
+			fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
 			continue
 		}
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		_, cppDur, err := runCppLayerNormNBPBench(fc, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %9s %s\n",
+				dt, band, mG.ExactPct, FormatUS(goUS), "?", "?", fmt.Sprintf("%.3g", mG.MaxAbs))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spdPct := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, band, mG.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", mG.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %+8.1f%% %s\n",
+			dt, band, mG.ExactPct, FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", mG.MaxAbs))
 		if band != suites.DetExactBit {
 			fails = append(fails, fmt.Sprintf("%s: %s", dt, band))
 		}
@@ -650,30 +637,24 @@ func runCppLayerNormVolNBPBench(depth, rows, cols, lpc, batch int, cells []lnVol
 }
 
 func benchLayerNormVolNBP(depth, rows, cols, lpc, batch int, cells []lnVolCell, x, target []float32, lr float64, benchIters int) (goUS, cppUS, spdPct float64, err error) {
-	for i := 0; i < 3; i++ {
-		if _, err := runGoLayerNormVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
+	goUS, err = benchGoUS(func() error {
+		_, err := runGoLayerNormVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+		return err
+	}, benchIters)
+	if err != nil {
+		return 0, 0, 0, err
 	}
-	t0 := time.Now()
-	for i := 0; i < benchIters; i++ {
-		if _, err := runGoLayerNormVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
-	}
-	goDur := time.Since(t0)
 	_, cppDur, err := runCppLayerNormVolNBPBench(depth, rows, cols, lpc, batch, cells, x, target, lr, benchIters)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	goUS = float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-	cppUS = float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS = perIterUS(cppDur, benchIters)
 	spdPct = suites.SpeedPctDiff(goUS, cppUS)
 	return goUS, cppUS, spdPct, nil
 }
 
 func caseLayerNormNBPVol1x1x1() error {
-	const batch, dim, benchIters = 2, 4, 40
+	const batch, dim, benchIters = 2, 4, defaultGoBenchIters
 	gamma := []float32{1.0, 0.9, 1.1, 0.95}
 	beta := []float32{0.01, -0.02, 0.03, -0.01}
 	x := []float32{1, 0.5, -0.5, 0.25, -1, 0.75, 0.25, -0.5}
@@ -697,13 +678,13 @@ func caseLayerNormNBPVol1x1x1() error {
 	if err != nil {
 		return fmt.Errorf("bench: %w", err)
 	}
-	fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
 func caseLayerNormNBPVolChain() error {
-	const batch, dim, benchIters = 1, 4, 40
+	const batch, dim, benchIters = 1, 4, defaultGoBenchIters
 	g0 := []float32{1, 0.9, 1.1, 0.95}
 	b0 := []float32{0.01, -0.02, 0.03, -0.01}
 	g1 := []float32{0.8, 1.2, 1.0, 0.85}
@@ -730,13 +711,13 @@ func caseLayerNormNBPVolChain() error {
 	if err != nil {
 		return fmt.Errorf("bench: %w", err)
 	}
-	fmt.Printf("\n      1×1×1×2 chain loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      1×1×1×2 chain loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
 func caseLayerNormNBPVol111AllDTypes() error {
-	const depth, rows, cols, lpc, batch, dim, benchIters = 1, 1, 1, 1, 1, 4, 40
+	const depth, rows, cols, lpc, batch, dim, benchIters = 1, 1, 1, 1, 1, 4, defaultGoBenchIters
 	gamma, beta, x := makeLNAffineInit(dim, batch)
 	target := make([]float32, dim)
 	for i := range target {
@@ -772,8 +753,8 @@ func caseLayerNormNBPVol111AllDTypes() error {
 			continue
 		}
 		m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, m.Band, m.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %+8.1f%% %s\n",
+			dt, m.Band, m.ExactPct, FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 	}
 	fmt.Printf("      spd%%Δ = (cpp−go)/go×100  (negative ⇒ C++ faster)\n")
 	if len(fails) > 0 {
@@ -783,7 +764,7 @@ func caseLayerNormNBPVol111AllDTypes() error {
 }
 
 func caseLayerNormNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 2, 2, 1, 1, 4, 40
+	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 2, 2, 1, 1, 4, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gamma, beta, x := makeLNAffineInit(dim, batch)
 	target := make([]float32, dim)
@@ -812,13 +793,13 @@ func caseLayerNormNBPVol222F32() error {
 	if err != nil {
 		return fmt.Errorf("bench: %w", err)
 	}
-	fmt.Printf("\n      2×2×2×1 Float32 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      2×2×2×1 Float32 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
 func caseLayerNormNBPVol211AllDTypes() error {
-	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 1, 1, 1, 1, 4, 40
+	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 1, 1, 1, 1, 4, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gamma, beta, x := makeLNAffineInit(dim, batch)
 	target := make([]float32, dim)
@@ -858,8 +839,8 @@ func caseLayerNormNBPVol211AllDTypes() error {
 			continue
 		}
 		m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, m.Band, m.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %+8.1f%% %s\n",
+			dt, m.Band, m.ExactPct, FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 	}
 	fmt.Printf("      spd%%Δ = (cpp−go)/go×100  (negative ⇒ C++ faster)\n")
 	if len(fails) > 0 {

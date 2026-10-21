@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/core"
@@ -951,13 +950,11 @@ func runPolyKindSpectrum(pc polyCase) error {
 	var fails []string
 	const benchIters = 10
 	for _, dt := range core.AllDTypes {
-		t0 := time.Now()
 		err := runPolyKind(pc, dt, true, 0)
-		goDur := time.Since(t0)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s:%v", dt, err))
-			fmt.Printf("      %-12s %-12s %7s %10.2f %10s %8s  %v\n", dt, suites.DetBroken, "—",
-				float64(goDur.Nanoseconds())/1000, "—", "—", err)
+			fmt.Printf("      %-12s %-12s %7s %10s %10s %8s  %v\n", dt, suites.DetBroken, "—",
+				"—", "—", "—", err)
 			continue
 		}
 		brs, x, tgt, xShape, tShape, _ := pc.make(dt)
@@ -967,13 +964,16 @@ func runPolyKindSpectrum(pc polyCase) error {
 			fails = append(fails, fmt.Sprintf("%s bench:%v", dt, err))
 			continue
 		}
-		goUs := float64(goDur.Nanoseconds()) / 1000
-		cppUs := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
-		spd := 0.0
-		if goUs > 0 {
-			spd = 100 * (goUs - cppUs) / goUs
+		goUS, berr := benchGoUS(func() error {
+			return runPolyKind(pc, dt, true, 0)
+		}, benchIters)
+		if berr != nil {
+			fails = append(fails, fmt.Sprintf("%s go-bench:%v", dt, berr))
+			continue
 		}
-		fmt.Printf("      %-12s %-12s %7s %10.2f %10.2f %8.1f\n", dt, suites.DetExactBit, "100%", goUs, cppUs, spd)
+		cppUS := perIterUS(cppDur, benchIters)
+		spd := suites.SpeedPctDiff(goUS, cppUS)
+		fmt.Printf("      %-12s %-12s %7s %10s %10s %8.1f%%\n", dt, suites.DetExactBit, "100%", FormatUS(goUS), FormatUS(cppUS), spd)
 	}
 	if len(fails) > 0 {
 		n := len(fails)

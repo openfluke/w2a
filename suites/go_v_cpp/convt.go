@@ -382,7 +382,7 @@ func caseConvT3Smoke() error {
 }
 
 func caseConvT1AllDTypes() error {
-	const batch, benchIters = 1, 20
+	const batch, benchIters = 1, defaultGoBenchIters
 	cfg := convt1.Config{
 		InChannels: 2, Filters: 3, SeqLen: 6, Kernel: 3, Stride: 1, Padding: 1,
 		Activation: core.ActivationLinear,
@@ -431,31 +431,25 @@ func caseConvT1AllDTypes() error {
 		}
 		exactN += m.ExactBits
 		totalN += m.N
-		for i := 0; i < 2; i++ {
-			if _, _, err := runGoConvT1(fc); err != nil {
-				break
-			}
-		}
-		t0 := time.Now()
-		for i := 0; i < benchIters; i++ {
-			if _, _, err := runGoConvT1(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
-				break
-			}
-		}
-		goDur := time.Since(t0)
-		_, _, cppDur, err := runCppConvT(payload, benchIters)
-		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, err := benchGoUS(func() error {
+			_, _, err := runGoConvT1(fc)
+			return err
+		}, benchIters)
 		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
-			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10s %9s %s\n",
-				dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, "?", "?", fmt.Sprintf("%.3g", m.MaxAbs))
+			fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
 			continue
 		}
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		_, _, cppDur, err := runCppConvT(payload, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
+			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %9s %s\n",
+				dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), "?", "?", fmt.Sprintf("%.3g", m.MaxAbs))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spdPct := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %+8.1f%% %s\n",
+			dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 		if m.Band != suites.DetExactBit {
 			fails = append(fails, fmt.Sprintf("%s: %s", dt, suites.FormatSpectrum(m)))
 		}
@@ -475,7 +469,7 @@ func caseConvT1AllDTypes() error {
 }
 
 func caseConvT2AllDTypes() error {
-	const batch, benchIters = 1, 20
+	const batch, benchIters = 1, defaultGoBenchIters
 	cfg := convt2.Config{
 		InChannels: 2, Filters: 2, Height: 4, Width: 4, Kernel: 3, Stride: 1, Padding: 0,
 		Activation: core.ActivationLinear,
@@ -524,31 +518,25 @@ func caseConvT2AllDTypes() error {
 		}
 		exactN += m.ExactBits
 		totalN += m.N
-		for i := 0; i < 2; i++ {
-			if _, _, err := runGoConvT2(fc); err != nil {
-				break
-			}
-		}
-		t0 := time.Now()
-		for i := 0; i < benchIters; i++ {
-			if _, _, err := runGoConvT2(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
-				break
-			}
-		}
-		goDur := time.Since(t0)
-		_, _, cppDur, err := runCppConvT(payload, benchIters)
-		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, err := benchGoUS(func() error {
+			_, _, err := runGoConvT2(fc)
+			return err
+		}, benchIters)
 		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
-			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10s %9s %s\n",
-				dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, "?", "?", fmt.Sprintf("%.3g", m.MaxAbs))
+			fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
 			continue
 		}
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		_, _, cppDur, err := runCppConvT(payload, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
+			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %9s %s\n",
+				dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), "?", "?", fmt.Sprintf("%.3g", m.MaxAbs))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spdPct := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %+8.1f%% %s\n",
+			dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 		if m.Band != suites.DetExactBit {
 			fails = append(fails, fmt.Sprintf("%s: %s", dt, suites.FormatSpectrum(m)))
 		}
@@ -568,7 +556,7 @@ func caseConvT2AllDTypes() error {
 }
 
 func caseConvT3AllDTypes() error {
-	const batch, benchIters = 1, 20
+	const batch, benchIters = 1, defaultGoBenchIters
 	cfg := convt3.Config{
 		InChannels: 1, Filters: 2, Depth: 3, Height: 3, Width: 3, Kernel: 2, Stride: 1, Padding: 0,
 		Activation: core.ActivationLinear,
@@ -617,31 +605,25 @@ func caseConvT3AllDTypes() error {
 		}
 		exactN += m.ExactBits
 		totalN += m.N
-		for i := 0; i < 2; i++ {
-			if _, _, err := runGoConvT3(fc); err != nil {
-				break
-			}
-		}
-		t0 := time.Now()
-		for i := 0; i < benchIters; i++ {
-			if _, _, err := runGoConvT3(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
-				break
-			}
-		}
-		goDur := time.Since(t0)
-		_, _, cppDur, err := runCppConvT(payload, benchIters)
-		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, err := benchGoUS(func() error {
+			_, _, err := runGoConvT3(fc)
+			return err
+		}, benchIters)
 		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
-			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10s %9s %s\n",
-				dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, "?", "?", fmt.Sprintf("%.3g", m.MaxAbs))
+			fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
 			continue
 		}
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		_, _, cppDur, err := runCppConvT(payload, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
+			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %9s %s\n",
+				dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), "?", "?", fmt.Sprintf("%.3g", m.MaxAbs))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spdPct := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %+8.1f%% %s\n",
+			dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 		if m.Band != suites.DetExactBit {
 			fails = append(fails, fmt.Sprintf("%s: %s", dt, suites.FormatSpectrum(m)))
 		}

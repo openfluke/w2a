@@ -452,31 +452,25 @@ func runSoftmaxDtypeTable(fx smKindFixture, benchIters int) (exactN, totalN int,
 		}
 		exactN += m.ExactBits
 		totalN += m.N
-		for i := 0; i < 2; i++ {
-			if _, _, err := runGoSoftmax(fc); err != nil {
-				break
-			}
-		}
-		t0 := time.Now()
-		for i := 0; i < benchIters; i++ {
-			if _, _, err := runGoSoftmax(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s/%s go bench: %v", fx.name, dt, err))
-				break
-			}
-		}
-		goDur := time.Since(t0)
-		_, _, cppDur, err := runCppSoftmax(payload, benchIters)
-		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, err := benchGoUS(func() error {
+			_, _, err := runGoSoftmax(fc)
+			return err
+		}, benchIters)
 		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s/%s cpp bench: %v", fx.name, dt, err))
-			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10s %9s %s\n",
-				dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, "?", "?", fmt.Sprintf("%.3g", m.MaxAbs))
+			fails = append(fails, fmt.Sprintf("%s/%s go bench: %v", fx.name, dt, err))
 			continue
 		}
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		_, _, cppDur, err := runCppSoftmax(payload, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s/%s cpp bench: %v", fx.name, dt, err))
+			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %9s %s\n",
+				dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), "?", "?", fmt.Sprintf("%.3g", m.MaxAbs))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spdPct := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %+8.1f%% %s\n",
+			dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 		if m.Band != suites.DetExactBit {
 			fails = append(fails, fmt.Sprintf("%s/%s: %s", fx.name, dt, suites.FormatSpectrum(m)))
 		}
@@ -493,7 +487,7 @@ func runSoftmaxDtypeTable(fx smKindFixture, benchIters int) (exactN, totalN int,
 }
 
 func caseSoftmaxAllKindsAllDTypes() error {
-	const benchIters = 20
+	const benchIters = defaultGoBenchIters
 	var allFails []string
 	var exactN, totalN int
 	worstBand := suites.DetExactBit

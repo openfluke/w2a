@@ -310,7 +310,7 @@ func compareMHANBP(goO, cppO mhbpLeafOut, requireExact bool) error {
 }
 
 func caseMHANBPLeafF32() error {
-	const benchIters = 40
+	const benchIters = defaultGoBenchIters
 	cfg := mha.DecoderCausal(32, 4, 4)
 	cfg.MaxSeqLen = 16
 	fc, err := makeMHANBPCase(cfg, 1, 4, core.DTypeFloat32, 0x4d484250, 1e-2)
@@ -328,27 +328,21 @@ func caseMHANBPLeafF32() error {
 	if err := compareMHANBP(goO, cppO, true); err != nil {
 		return err
 	}
-	for i := 0; i < 3; i++ {
-		if _, err := runGoMHANBP(fc); err != nil {
-			return err
-		}
+	goUS, err := benchGoUS(func() error {
+		_, err := runGoMHANBP(fc)
+		return err
+	}, benchIters)
+	if err != nil {
+		return fmt.Errorf("go bench: %w", err)
 	}
-	t0 := time.Now()
-	for i := 0; i < benchIters; i++ {
-		if _, err := runGoMHANBP(fc); err != nil {
-			return err
-		}
-	}
-	goDur := time.Since(t0)
 	_, cppDur, err := runCppMHANBPBench(fc, benchIters)
 	if err != nil {
 		return fmt.Errorf("cpp bench: %w", err)
 	}
-	goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-	cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS := perIterUS(cppDur, benchIters)
 	spdPct := suites.SpeedPctDiff(goUS, cppUS)
-	fmt.Printf("\n      loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%  (neg ⇒ C++ faster)",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%  (neg ⇒ C++ faster)",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
@@ -394,7 +388,7 @@ func caseMHANBPLeafVariants() error {
 }
 
 func caseMHANBPLeafAllDTypes() error {
-	const benchIters = 20
+	const benchIters = defaultGoBenchIters
 	cfg := mha.DecoderCausal(32, 4, 4)
 	cfg.MaxSeqLen = 16
 	var fails []string
@@ -431,32 +425,25 @@ func caseMHANBPLeafAllDTypes() error {
 		if band.Percent() < worst.Percent() {
 			worst = band
 		}
-		for i := 0; i < 3; i++ {
-			if _, err := runGoMHANBP(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go warm: %v", dt, err))
-				break
-			}
-		}
-		t0 := time.Now()
-		for i := 0; i < benchIters; i++ {
-			if _, err := runGoMHANBP(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
-				break
-			}
-		}
-		goDur := time.Since(t0)
-		_, cppDur, err := runCppMHANBPBench(fc, benchIters)
-		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, err := benchGoUS(func() error {
+			_, err := runGoMHANBP(fc)
+			return err
+		}, benchIters)
 		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
-			fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10s %9s %s\n",
-				dt, band, mW.ExactPct, goUS, "?", "?", fmt.Sprintf("%.3g", mW.MaxAbs))
+			fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
 			continue
 		}
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		_, cppDur, err := runCppMHANBPBench(fc, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %9s %s\n",
+				dt, band, mW.ExactPct, FormatUS(goUS), "?", "?", fmt.Sprintf("%.3g", mW.MaxAbs))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spdPct := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, band, mW.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", mW.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %+8.1f%% %s\n",
+			dt, band, mW.ExactPct, FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", mW.MaxAbs))
 		if band != suites.DetExactBit {
 			fails = append(fails, fmt.Sprintf("%s: %s", dt, band))
 		}
@@ -710,24 +697,18 @@ func runCppMHAVolNBPBench(depth, rows, cols, lpc, batch int, cells []mhVolCell, 
 }
 
 func benchMHAVolNBP(depth, rows, cols, lpc, batch int, cells []mhVolCell, x, target []float32, lr float64, benchIters int) (goUS, cppUS, spdPct float64, err error) {
-	for i := 0; i < 3; i++ {
-		if _, err := runGoMHAVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
+	goUS, err = benchGoUS(func() error {
+		_, err := runGoMHAVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+		return err
+	}, benchIters)
+	if err != nil {
+		return 0, 0, 0, err
 	}
-	t0 := time.Now()
-	for i := 0; i < benchIters; i++ {
-		if _, err := runGoMHAVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
-	}
-	goDur := time.Since(t0)
 	_, cppDur, err := runCppMHAVolNBPBench(depth, rows, cols, lpc, batch, cells, x, target, lr, benchIters)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	goUS = float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-	cppUS = float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS = perIterUS(cppDur, benchIters)
 	spdPct = suites.SpeedPctDiff(goUS, cppUS)
 	return goUS, cppUS, spdPct, nil
 }
@@ -747,7 +728,7 @@ func makeMHVolCell(cfg mha.Config, dt core.DType, seed uint32) (mhVolCell, error
 }
 
 func caseMHANBPVol1x1x1() error {
-	const batch, seq, benchIters = 1, 4, 40
+	const batch, seq, benchIters = 1, 4, defaultGoBenchIters
 	cfg := mha.DecoderCausal(16, 2, 2)
 	cfg.MaxSeqLen = 16
 	cell, err := makeMHVolCell(cfg, core.DTypeFloat32, 0x4d485631)
@@ -776,13 +757,13 @@ func caseMHANBPVol1x1x1() error {
 	if err != nil {
 		return fmt.Errorf("bench: %w", err)
 	}
-	fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
 func caseMHANBPVolChain() error {
-	const batch, seq, benchIters = 1, 3, 40
+	const batch, seq, benchIters = 1, 3, defaultGoBenchIters
 	cfg := mha.DecoderCausal(16, 2, 2)
 	cfg.MaxSeqLen = 16
 	c0, err := makeMHVolCell(cfg, core.DTypeFloat32, 0x4d485633)
@@ -815,8 +796,8 @@ func caseMHANBPVolChain() error {
 	if err != nil {
 		return fmt.Errorf("bench: %w", err)
 	}
-	fmt.Printf("\n      1×1×1×2 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      1×1×1×2 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
@@ -884,7 +865,7 @@ func scaleMHA(q, k, v, o, x []float32, s float32) {
 }
 
 func caseMHANBPVol222F32() error {
-	const batch, seq, benchIters = 1, 2, 20
+	const batch, seq, benchIters = 1, 2, defaultGoBenchIters
 	cfg := mha.DecoderCausal(16, 2, 2)
 	cfg.MaxSeqLen = 32
 	x := randInit(batch*seq, cfg.DModel, 0x4d485638)
@@ -919,8 +900,8 @@ func caseMHANBPVol222F32() error {
 	if err != nil {
 		return fmt.Errorf("bench: %w", err)
 	}
-	fmt.Printf("\n      2×2×2×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      2×2×2×1 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 

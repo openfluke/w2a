@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/core"
@@ -193,35 +192,35 @@ func runParallelNBPCase(combine parallel.CombineMode, dtype core.DType, exact bo
 }
 
 func caseParallelNBPAddF32() error {
-	return runParallelNBPCase(parallel.CombineAdd, core.DTypeFloat32, true, 40)
+	return runParallelNBPCase(parallel.CombineAdd, core.DTypeFloat32, true, defaultGoBenchIters)
 }
 
 func caseParallelNBPAvgF32() error {
-	return runParallelNBPCase(parallel.CombineAvg, core.DTypeFloat32, true, 40)
+	return runParallelNBPCase(parallel.CombineAvg, core.DTypeFloat32, true, defaultGoBenchIters)
 }
 
 func caseParallelNBPConcatF32() error {
-	return runParallelNBPCase(parallel.CombineConcat, core.DTypeFloat32, true, 20)
+	return runParallelNBPCase(parallel.CombineConcat, core.DTypeFloat32, true, defaultGoBenchIters)
 }
 
 func caseParallelNBPMaxF32() error {
-	return runParallelNBPCase(parallel.CombineMax, core.DTypeFloat32, true, 20)
+	return runParallelNBPCase(parallel.CombineMax, core.DTypeFloat32, true, defaultGoBenchIters)
 }
 
 func caseParallelNBPSparseKF32() error {
-	return runParallelNBPCase(parallel.CombineSparseK, core.DTypeFloat32, true, 20)
+	return runParallelNBPCase(parallel.CombineSparseK, core.DTypeFloat32, true, defaultGoBenchIters)
 }
 
 func caseParallelNBPDisagreeF32() error {
-	return runParallelNBPCase(parallel.CombineDisagree, core.DTypeFloat32, true, 20)
+	return runParallelNBPCase(parallel.CombineDisagree, core.DTypeFloat32, true, defaultGoBenchIters)
 }
 
 func caseParallelNBPFilterF32() error {
-	return runParallelNBPCase(parallel.CombineFilter, core.DTypeFloat32, true, 20)
+	return runParallelNBPCase(parallel.CombineFilter, core.DTypeFloat32, true, defaultGoBenchIters)
 }
 
 func caseParallelNBPAddAllDTypes() error {
-	const benchIters = 20
+	const benchIters = defaultGoBenchIters
 	fmt.Printf("\n      [Parallel NormalBP Add ×34]\n")
 	fmt.Printf("      %-12s %-12s %8s %10s %10s %9s\n", "dtype", "band", "exact%W", "goµs", "cppµs", "spd%Δ")
 	var fails []string
@@ -229,13 +228,11 @@ func caseParallelNBPAddAllDTypes() error {
 	const batch, dim, outFeat, branches = 2, 4, 4, 2
 	const lr = 1e-2
 	for _, dt := range core.AllDTypes {
-		t0 := time.Now()
 		err := runParallelNBPCase(parallel.CombineAdd, dt, true, 0)
-		goDur := time.Since(t0)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s:%v", dt, err))
-			fmt.Printf("      %-12s %-12s %7s %10.2f %10s %8s  %v\n", dt, suites.DetBroken, "—",
-				float64(goDur.Nanoseconds())/1000, "—", "—", err)
+			fmt.Printf("      %-12s %-12s %7s %10s %10s %8s  %v\n", dt, suites.DetBroken, "—",
+				"—", "—", "—", err)
 			continue
 		}
 		packed := randInit(1, branches*outFeat*dim, 0x504e4201)
@@ -259,11 +256,18 @@ func caseParallelNBPAddAllDTypes() error {
 		goO, _ := runGoParallelNBP(dt, batch, dim, outFeat, branches, packed, x, target, lr, modes, parallel.CombineAdd)
 		cppO, _, _ := runCppCameralModes(payload, "PNBO", 0)
 		m := suites.CompareF32Spectrum(goO.WAfter[0], cppO.WAfter[0])
-		goUS := float64(goDur.Nanoseconds()) / 1000
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, berr := benchGoUS(func() error {
+			_, err := runGoParallelNBP(dt, batch, dim, outFeat, branches, packed, x, target, lr, modes, parallel.CombineAdd)
+			return err
+		}, benchIters)
+		if berr != nil {
+			fails = append(fails, fmt.Sprintf("%s go-bench:%v", dt, berr))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spd := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %8.1f%%\n",
-			dt, m.Band, m.ExactPct, goUS, cppUS, spd)
+		fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %8.1f%%\n",
+			dt, m.Band, m.ExactPct, FormatUS(goUS), FormatUS(cppUS), spd)
 	}
 	if len(fails) > 0 {
 		return fmt.Errorf("dtype fails: %s", joinFails(fails))

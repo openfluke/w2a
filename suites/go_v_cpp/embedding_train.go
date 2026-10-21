@@ -281,7 +281,7 @@ func compareEmbeddingNBP(goO, cppO embpLeafOut, requireExact bool) error {
 }
 
 func caseEmbeddingNBPLeafF32() error {
-	const benchIters = 40
+	const benchIters = defaultGoBenchIters
 	vocab, emb, batch, seq := 16, 8, 2, 4
 	W, x := makeEmbeddingTrainInit(vocab, emb, batch, seq, 0x454d4250)
 	target := make([]float32, batch*seq*emb)
@@ -304,32 +304,26 @@ func caseEmbeddingNBPLeafF32() error {
 	if err := compareEmbeddingNBP(goO, cppO, true); err != nil {
 		return err
 	}
-	for i := 0; i < 3; i++ {
-		if _, err := runGoEmbeddingNBP(fc); err != nil {
-			return err
-		}
+	goUS, err := benchGoUS(func() error {
+		_, err := runGoEmbeddingNBP(fc)
+		return err
+	}, benchIters)
+	if err != nil {
+		return fmt.Errorf("go bench: %w", err)
 	}
-	t0 := time.Now()
-	for i := 0; i < benchIters; i++ {
-		if _, err := runGoEmbeddingNBP(fc); err != nil {
-			return err
-		}
-	}
-	goDur := time.Since(t0)
 	_, cppDur, err := runCppEmbeddingNBPBench(fc, benchIters)
 	if err != nil {
 		return fmt.Errorf("cpp bench: %w", err)
 	}
-	goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-	cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS := perIterUS(cppDur, benchIters)
 	spdPct := suites.SpeedPctDiff(goUS, cppUS)
-	fmt.Printf("\n      loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%  (neg ⇒ C++ faster)",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%  (neg ⇒ C++ faster)",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
 func caseEmbeddingNBPLeafAllDTypes() error {
-	const benchIters = 20
+	const benchIters = defaultGoBenchIters
 	vocab, emb, batch, seq := 12, 6, 2, 3
 	W, x := makeEmbeddingTrainInit(vocab, emb, batch, seq, 0x454d4434)
 	target := make([]float32, batch*seq*emb)
@@ -370,32 +364,25 @@ func caseEmbeddingNBPLeafAllDTypes() error {
 		if band.Percent() < worst.Percent() {
 			worst = band
 		}
-		for i := 0; i < 3; i++ {
-			if _, err := runGoEmbeddingNBP(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go warm: %v", dt, err))
-				break
-			}
-		}
-		t0 := time.Now()
-		for i := 0; i < benchIters; i++ {
-			if _, err := runGoEmbeddingNBP(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
-				break
-			}
-		}
-		goDur := time.Since(t0)
-		_, cppDur, err := runCppEmbeddingNBPBench(fc, benchIters)
-		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, err := benchGoUS(func() error {
+			_, err := runGoEmbeddingNBP(fc)
+			return err
+		}, benchIters)
 		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
-			fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10s %9s %s\n",
-				dt, band, mW.ExactPct, goUS, "?", "?", fmt.Sprintf("%.3g", mW.MaxAbs))
+			fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
 			continue
 		}
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		_, cppDur, err := runCppEmbeddingNBPBench(fc, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %9s %s\n",
+				dt, band, mW.ExactPct, FormatUS(goUS), "?", "?", fmt.Sprintf("%.3g", mW.MaxAbs))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spdPct := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, band, mW.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", mW.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %+8.1f%% %s\n",
+			dt, band, mW.ExactPct, FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", mW.MaxAbs))
 		if band != suites.DetExactBit {
 			fails = append(fails, fmt.Sprintf("%s: %s", dt, band))
 		}
@@ -628,30 +615,24 @@ func runCppEmbeddingVolNBPBench(depth, rows, cols, lpc, batch int, cells []embVo
 }
 
 func benchEmbeddingVolNBP(depth, rows, cols, lpc, batch int, cells []embVolCell, x, target []float32, lr float64, benchIters int) (goUS, cppUS, spdPct float64, err error) {
-	for i := 0; i < 3; i++ {
-		if _, err := runGoEmbeddingVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
+	goUS, err = benchGoUS(func() error {
+		_, err := runGoEmbeddingVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+		return err
+	}, benchIters)
+	if err != nil {
+		return 0, 0, 0, err
 	}
-	t0 := time.Now()
-	for i := 0; i < benchIters; i++ {
-		if _, err := runGoEmbeddingVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
-	}
-	goDur := time.Since(t0)
 	_, cppDur, err := runCppEmbeddingVolNBPBench(depth, rows, cols, lpc, batch, cells, x, target, lr, benchIters)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	goUS = float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-	cppUS = float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS = perIterUS(cppDur, benchIters)
 	spdPct = suites.SpeedPctDiff(goUS, cppUS)
 	return goUS, cppUS, spdPct, nil
 }
 
 func caseEmbeddingNBPVol1x1x1() error {
-	const batch, vocab, emb, seq, benchIters = 2, 8, 4, 3, 40
+	const batch, vocab, emb, seq, benchIters = 2, 8, 4, 3, defaultGoBenchIters
 	W, x := makeEmbeddingTrainInit(vocab, emb, batch, seq, 0x454d5631)
 	target := make([]float32, batch*seq*emb)
 	for i := range target {
@@ -677,13 +658,13 @@ func caseEmbeddingNBPVol1x1x1() error {
 	if err != nil {
 		return fmt.Errorf("bench: %w", err)
 	}
-	fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
 func caseEmbeddingNBPVolChain() error {
-	const batch, vocab, emb, seq, benchIters = 1, 8, 4, 3, 40
+	const batch, vocab, emb, seq, benchIters = 1, 8, 4, 3, defaultGoBenchIters
 	W0, x := makeEmbeddingTrainInit(vocab, emb, batch, seq, 0x454d5633)
 	W1, _ := makeEmbeddingTrainInit(vocab, emb, batch, seq, 0x454d5634)
 	target := make([]float32, batch*seq*emb)
@@ -710,8 +691,8 @@ func caseEmbeddingNBPVolChain() error {
 	if err != nil {
 		return fmt.Errorf("bench: %w", err)
 	}
-	fmt.Printf("\n      1×1×1×2 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      1×1×1×2 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
@@ -757,7 +738,7 @@ func caseEmbeddingNBPVol111AllDTypes() error {
 }
 
 func caseEmbeddingNBPVol222F32() error {
-	const batch, vocab, emb, seq, benchIters = 1, 8, 4, 2, 20
+	const batch, vocab, emb, seq, benchIters = 1, 8, 4, 2, defaultGoBenchIters
 	x := tokenIDs(batch*seq, vocab, 0x454d5637)
 	target := make([]float32, batch*seq*emb)
 	for i := range target {
@@ -787,8 +768,8 @@ func caseEmbeddingNBPVol222F32() error {
 	if err != nil {
 		return fmt.Errorf("bench: %w", err)
 	}
-	fmt.Printf("\n      2×2×2×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      2×2×2×1 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 

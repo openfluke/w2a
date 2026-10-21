@@ -262,7 +262,7 @@ func caseSwiGLUDefaultFFN() error {
 }
 
 func caseSwiGLUAllDTypes() error {
-	const batch, seq, benchIters = 1, 2, 20
+	const batch, seq, benchIters = 1, 2, defaultGoBenchIters
 	cfg := swiglu.Config{InputDim: 16, IntermediateDim: 32}
 	if err := cfg.Validate(); err != nil {
 		return err
@@ -313,33 +313,26 @@ func caseSwiGLUAllDTypes() error {
 		exactN += m.ExactBits
 		totalN += m.N
 
-		for i := 0; i < 2; i++ {
-			if _, _, err := runGoSwiGLU(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s warm: %v", dt, err))
-				break
-			}
+		goUS, err := benchGoUS(func() error {
+			_, _, err := runGoSwiGLU(fc)
+			return err
+		}, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
+			continue
 		}
-		t0 := time.Now()
-		for i := 0; i < benchIters; i++ {
-			if _, _, err := runGoSwiGLU(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
-				break
-			}
-		}
-		goDur := time.Since(t0)
 		_, _, cppDur, err := runCppSwiGLUBench(fc, benchIters)
-		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
-			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10s %9s %s\n",
-				dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, "?", "?",
+			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %9s %s\n",
+				dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), "?", "?",
 				fmt.Sprintf("%.3g", m.MaxAbs))
 			continue
 		}
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		cppUS := perIterUS(cppDur, benchIters)
 		spdPct := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, cppUS, spdPct,
+		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %+8.1f%% %s\n",
+			dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), FormatUS(cppUS), spdPct,
 			fmt.Sprintf("%.3g", m.MaxAbs))
 		if m.Band != suites.DetExactBit {
 			fails = append(fails, fmt.Sprintf("%s: %s", dt, suites.FormatSpectrum(m)))

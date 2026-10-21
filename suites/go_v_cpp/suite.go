@@ -383,7 +383,7 @@ func makeSharedInit(out, in, batch int) (W, x []float32, bias []float64) {
 }
 
 func runDtypeMatrix(be core.Backend, title string, requireExactBits bool) error {
-	const in, out, batch, benchIters = 16, 8, 2, 40
+	const in, out, batch, benchIters = 16, 8, 2, defaultGoBenchIters
 	if len(core.AllDTypes) != 34 {
 		return fmt.Errorf("expected 34 dtypes, got %d", len(core.AllDTypes))
 	}
@@ -422,36 +422,29 @@ func runDtypeMatrix(be core.Backend, title string, requireExactBits bool) error 
 		exactN += m.ExactBits
 		totalN += m.N
 
-		for i := 0; i < 3; i++ {
-			if _, _, err := runGo(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s warm go: %v", dt, err))
-				break
-			}
+		goUS, err := benchGoUS(func() error {
+			_, _, err := runGo(fc)
+			return err
+		}, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s go: %v", dt, err))
+			continue
 		}
-		t0 := time.Now()
-		for i := 0; i < benchIters; i++ {
-			if _, _, err := runGo(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go: %v", dt, err))
-				break
-			}
-		}
-		goDur := time.Since(t0)
 		_, _, cppDur, err := runCppBench(fc, benchIters)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
 			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %9s %s\n",
 				dt, m.Band, m.ExactPct, m.Band.Percent(),
-				fmt.Sprintf("%.2f", float64(goDur.Nanoseconds())/float64(benchIters)/1000),
+				FormatUS(goUS),
 				"?", "?", fmt.Sprintf("%.3g", m.MaxAbs))
 			continue
 		}
 		// Per-iter µs from ns total (ms is too coarse for these kernels).
-		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		cppUS := perIterUS(cppDur, benchIters)
 		spdPct := suites.SpeedPctDiff(goUS, cppUS)
 
-		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, cppUS, spdPct,
+		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %+8.1f%% %s\n",
+			dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), FormatUS(cppUS), spdPct,
 			fmt.Sprintf("%.3g", m.MaxAbs))
 
 		if requireExactBits {
@@ -954,33 +947,26 @@ func caseVolumeDense3x3x3AllDTypes() error {
 		exactN += m.ExactBits
 		totalN += m.N
 
-		for i := 0; i < 2; i++ {
-			if _, err := forward.Forward(g, tin); err != nil {
-				fails = append(fails, fmt.Sprintf("%s warm: %v", dt, err))
-				break
-			}
+		goUS, err := benchGoUS(func() error {
+			_, err := forward.Forward(g, tin)
+			return err
+		}, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
+			continue
 		}
-		t0 := time.Now()
-		for i := 0; i < benchIters; i++ {
-			if _, err := forward.Forward(g, tin); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
-				break
-			}
-		}
-		goDur := time.Since(t0)
 		_, cppDur, err := runCppVolumeBench(depth, rows, cols, lpc, batch, be, nil, cells, x, benchIters)
-		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
-			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10s %9s %s\n",
-				dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, "?", "?",
+			fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %9s %s\n",
+				dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), "?", "?",
 				fmt.Sprintf("%.3g", m.MaxAbs))
 			continue
 		}
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		cppUS := perIterUS(cppDur, benchIters)
 		spdPct := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, m.Band, m.ExactPct, m.Band.Percent(), goUS, cppUS, spdPct,
+		fmt.Printf("      %-12s %-12s %7.2f%% %7.0f%% %10s %10s %+8.1f%% %s\n",
+			dt, m.Band, m.ExactPct, m.Band.Percent(), FormatUS(goUS), FormatUS(cppUS), spdPct,
 			fmt.Sprintf("%.3g", m.MaxAbs))
 
 		if m.Band != suites.DetExactBit {

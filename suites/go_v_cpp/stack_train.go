@@ -297,7 +297,7 @@ func makeStLeafCase(dim, nChildren, batch, seq int, dt core.DType, seed uint32) 
 }
 
 func caseStNBPLeafF32() error {
-	const benchIters = 40
+	const benchIters = defaultGoBenchIters
 	dim, nChildren, seq := smokeStCfg()
 	fc, err := makeStLeafCase(dim, nChildren, 2, seq, core.DTypeFloat32, 0x53544b42)
 	if err != nil {
@@ -314,32 +314,26 @@ func caseStNBPLeafF32() error {
 	if err := compareNBP(goO, cppO, true); err != nil {
 		return err
 	}
-	for i := 0; i < 3; i++ {
-		if _, err := runGoStNBP(fc); err != nil {
-			return err
-		}
+	goUS, err := benchGoUS(func() error {
+		_, err := runGoStNBP(fc)
+		return err
+	}, benchIters)
+	if err != nil {
+		return fmt.Errorf("go bench: %w", err)
 	}
-	t0 := time.Now()
-	for i := 0; i < benchIters; i++ {
-		if _, err := runGoStNBP(fc); err != nil {
-			return err
-		}
-	}
-	goDur := time.Since(t0)
 	_, cppDur, err := runCppStNBPBench(fc, benchIters)
 	if err != nil {
 		return fmt.Errorf("cpp bench: %w", err)
 	}
-	goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-	cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS := perIterUS(cppDur, benchIters)
 	spdPct := suites.SpeedPctDiff(goUS, cppUS)
-	fmt.Printf("\n      loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%  (neg ⇒ C++ faster)",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%  (neg ⇒ C++ faster)",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
 func caseStNBPLeafAllDTypes() error {
-	const benchIters = 20
+	const benchIters = defaultGoBenchIters
 	dim, nChildren, seq := smokeStCfg()
 	var fails []string
 	worst := suites.DetExactBit
@@ -375,32 +369,25 @@ func caseStNBPLeafAllDTypes() error {
 		if band.Percent() < worst.Percent() {
 			worst = band
 		}
-		for i := 0; i < 3; i++ {
-			if _, err := runGoStNBP(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go warm: %v", dt, err))
-				break
-			}
-		}
-		t0 := time.Now()
-		for i := 0; i < benchIters; i++ {
-			if _, err := runGoStNBP(fc); err != nil {
-				fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
-				break
-			}
-		}
-		goDur := time.Since(t0)
-		_, cppDur, err := runCppStNBPBench(fc, benchIters)
-		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+		goUS, err := benchGoUS(func() error {
+			_, err := runGoStNBP(fc)
+			return err
+		}, benchIters)
 		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
-			fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10s %9s %s\n",
-				dt, band, mW.ExactPct, goUS, "?", "?", fmt.Sprintf("%.3g", mW.MaxAbs))
+			fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
 			continue
 		}
-		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		_, cppDur, err := runCppStNBPBench(fc, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %9s %s\n",
+				dt, band, mW.ExactPct, FormatUS(goUS), "?", "?", fmt.Sprintf("%.3g", mW.MaxAbs))
+			continue
+		}
+		cppUS := perIterUS(cppDur, benchIters)
 		spdPct := suites.SpeedPctDiff(goUS, cppUS)
-		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
-			dt, band, mW.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", mW.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %+8.1f%% %s\n",
+			dt, band, mW.ExactPct, FormatUS(goUS), FormatUS(cppUS), spdPct, fmt.Sprintf("%.3g", mW.MaxAbs))
 		if band != suites.DetExactBit {
 			fails = append(fails, fmt.Sprintf("%s: %s", dt, band))
 		}
@@ -553,24 +540,18 @@ func benchStVolNBP(depth, rows, cols, lpc, batch int, cells []stVolCell, x, targ
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	for i := 0; i < 3; i++ {
-		if _, err := runGoStVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
+	goUS, err = benchGoUS(func() error {
+		_, err := runGoStVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+		return err
+	}, benchIters)
+	if err != nil {
+		return 0, 0, 0, err
 	}
-	t0 := time.Now()
-	for i := 0; i < benchIters; i++ {
-		if _, err := runGoStVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
-			return 0, 0, 0, err
-		}
-	}
-	goDur := time.Since(t0)
 	_, cppDur, err := runCppStVolNBP(payload, benchIters)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	goUS = float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
-	cppUS = float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS = perIterUS(cppDur, benchIters)
 	spdPct = suites.SpeedPctDiff(goUS, cppUS)
 	return goUS, cppUS, spdPct, nil
 }
@@ -594,7 +575,7 @@ func makeStVolCell(dim, nChildren, seq int, dt core.DType, seed uint32) stVolCel
 }
 
 func caseStNBPVol1x1x1() error {
-	const batch, benchIters, lr = 2, 40, 1e-2
+	const batch, benchIters, lr = 2, defaultGoBenchIters, 1e-2
 	dim, nChildren, seq := volStCfg()
 	W := randInit(1, stWeightCount(dim, nChildren), 0x53545631)
 	cells := []stVolCell{{
@@ -622,13 +603,13 @@ func caseStNBPVol1x1x1() error {
 	if err != nil {
 		return fmt.Errorf("bench: %w", err)
 	}
-	fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
 func caseStNBPVolChain() error {
-	const batch, benchIters, lr = 1, 40, 1e-2
+	const batch, benchIters, lr = 1, defaultGoBenchIters, 1e-2
 	dim, nChildren, seq := volStCfg()
 	W0 := randInit(1, stWeightCount(dim, nChildren), 0x53545633)
 	W1 := randInit(1, stWeightCount(dim, nChildren), 0x53545634)
@@ -657,8 +638,8 @@ func caseStNBPVolChain() error {
 	if err != nil {
 		return fmt.Errorf("bench: %w", err)
 	}
-	fmt.Printf("\n      1×1×1×2 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      1×1×1×2 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 
@@ -703,7 +684,7 @@ func caseStNBPVol111AllDTypes() error {
 }
 
 func caseStNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, 20
+	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	dim, nChildren, seq := volStCfg()
@@ -742,8 +723,8 @@ func caseStNBPVol222F32() error {
 	if err != nil {
 		return fmt.Errorf("bench: %w", err)
 	}
-	fmt.Printf("\n      2×2×2×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
-		goO.loss, goUS, cppUS, spdPct)
+	fmt.Printf("\n      2×2×2×1 loss=%.6g exact_bit  go=%s  cpp=%s  spd%%Δ=%+.1f%%",
+		goO.loss, FormatUS(goUS), FormatUS(cppUS), spdPct)
 	return nil
 }
 

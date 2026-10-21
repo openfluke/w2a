@@ -64,7 +64,8 @@ func Cases() []Case {
 	out = append(out, CasesGDN()...)
 	out = append(out, CasesSeqmix()...)
 	out = append(out, CasesParallel()...)
-	return append(out, CasesDenseTrain()...)
+	out = append(out, CasesDenseTrain()...)
+	return append(out, CasesRMSNormTrain()...)
 }
 
 func RunAll() error {

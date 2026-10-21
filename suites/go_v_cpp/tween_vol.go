@@ -226,6 +226,14 @@ func applyTweenLocalOp(op any, gy, input, pre *core.Tensor[float32], lr float64)
 		if dW != nil && dW.Len() > 0 {
 			return gdn.ApplyGradSGD(l, dW, lr)
 		}
+	case *parallel.Layer:
+		_, dW, err := parallel.Backward(l, gy, input, pre)
+		if err != nil {
+			return err
+		}
+		if dW != nil && dW.Len() > 0 {
+			return parallel.ApplyGradSGD(l, dW, lr)
+		}
 	case *parallel.Stack:
 		_, dW, err := parallel.BackwardStack(l, gy, input, pre)
 		if err != nil {

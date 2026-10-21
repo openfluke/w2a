@@ -157,6 +157,11 @@ func applyFastProxyGradIn(op any, gy, input, pre *core.Tensor[float32]) *core.Te
 		if err == nil {
 			return gx
 		}
+	case *parallel.Layer:
+		gx, _, err := parallel.Backward(l, gy, input, pre)
+		if err == nil {
+			return gx
+		}
 	case *parallel.Stack:
 		gx, _, err := parallel.BackwardStack(l, gy, input, pre)
 		if err == nil {

@@ -18,6 +18,7 @@ func CasesShadowTrain() []Case {
 		{Name: "Parallel Shadow∥NormalBP KD Float32 — exact bits", Run: caseShadowKDF32},
 		{Name: "Parallel Shadow∥NormalBP KD coef=0.5 Float32 — exact bits", Run: caseShadowKDCoefF32},
 		{Name: "Parallel Shadow∥NormalBP KD × all 34 dtypes — spectrum", Run: caseShadowKDAllDTypes},
+		{Name: "Parallel Shadow volume 2×2×2×1 Float32 — exact bits (≡ Freeze)", Run: casePnFreezeVol222F32},
 
 		// Leaf Stack ModeShadow ≡ Freeze (FRB1 C++ wire)
 		{Name: "Dense Shadow multi-hop Float32 — exact bits (W/loss)", Run: caseDenseShadowMultiHopF32},

@@ -37,8 +37,15 @@ import (
 )
 
 // CasesFreezeTrain — ModeFreeze (fwd + mse; no weight update) Go↔C++ for NormalBP-signed kinds.
+// Parallel BranchMode Freeze (FZB1) lives here — same Shadow pattern (Parallel host under mode suite).
 func CasesFreezeTrain() []Case {
 	return []Case{
+		// Parallel Freeze BranchMode (FZB1) — Dense Add Inside+Fully
+		{Name: "Parallel Freeze∥NormalBP Float32 — exact bits", Run: caseParallelFreezeMixedF32},
+		{Name: "Parallel parent ModeFreeze Float32 — exact bits (all W frozen)", Run: caseParallelFreezeParentF32},
+		{Name: "Parallel Freeze∥NormalBP × all 34 dtypes — spectrum", Run: caseParallelFreezeMixedAllDTypes},
+		{Name: "Parallel Freeze volume 2×2×2×1 Float32 — exact bits", Run: casePnFreezeVol222F32},
+
 		{Name: "Dense Freeze multi-hop Float32 — exact bits (W/loss)", Run: caseDenseFreezeMultiHopF32},
 		{Name: "Dense Freeze 1-hop × all 34 dtypes — spectrum + speed", Run: caseDenseFreeze1HopAllDTypes},
 		{Name: "RMSNorm Freeze 1-hop Float32 — exact bits", Run: caseRMSNormFreezeF32},
@@ -120,6 +127,27 @@ func RunFreezeTrain() error {
 		return fmt.Errorf("go_v_cpp freeze_train: %d failed: %s", len(fails), strings.Join(fails, ", "))
 	}
 	return nil
+}
+
+// --- Parallel BranchMode Freeze (FZB1 / FZBO; FRP1 taken by TweenSplitFastProxy vol) ---
+
+func caseParallelFreezeMixedF32() error {
+	modes := []parallel.TrainMode{parallel.ModeFreeze, parallel.ModeNormalBP}
+	return runCameralModesCaseParent("FZB1", "FZBO", modes, parallel.CamKit{},
+		parallel.ModeNormalBP, true, core.DTypeFloat32, true, 40)
+}
+
+func caseParallelFreezeParentF32() error {
+	// Parent ModeFreeze early-out: Inherit BranchModes → all frozen, W unchanged.
+	modes := []parallel.TrainMode{parallel.ModeInherit, parallel.ModeInherit}
+	return runCameralModesCaseParent("FZB1", "FZBO", modes, parallel.CamKit{},
+		parallel.ModeFreeze, true, core.DTypeFloat32, true, 40)
+}
+
+func caseParallelFreezeMixedAllDTypes() error {
+	modes := []parallel.TrainMode{parallel.ModeFreeze, parallel.ModeNormalBP}
+	return runCameralModesSpectrumParent("Freeze∥NormalBP", "FZB1", "FZBO", modes,
+		parallel.CamKit{}, parallel.ModeNormalBP, true)
 }
 
 type freezeOut struct {

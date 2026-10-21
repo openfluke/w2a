@@ -27,6 +27,14 @@ type cameralModesOut struct {
 func encodeCameralModes(magic string, batch, dim, outFeat, branches int, dtype core.DType,
 	packed, x, target []float32, lr float64, modes []parallel.TrainMode,
 	shadowCoef, surpriseThresh float64) []byte {
+	return encodeCameralModesParent(magic, batch, dim, outFeat, branches, dtype, packed, x, target, lr,
+		modes, shadowCoef, surpriseThresh, parallel.ModeNormalBP, false)
+}
+
+// encodeCameralModesParent — ADB1 shape + optional trailing parent_mode i32 (FZB1).
+func encodeCameralModesParent(magic string, batch, dim, outFeat, branches int, dtype core.DType,
+	packed, x, target []float32, lr float64, modes []parallel.TrainMode,
+	shadowCoef, surpriseThresh float64, parent parallel.TrainMode, writeParent bool) []byte {
 	var in bytes.Buffer
 	_, _ = in.Write([]byte(magic))
 	for _, v := range []int32{int32(batch), int32(dim), int32(outFeat), int32(branches), int32(dtype)} {
@@ -47,6 +55,9 @@ func encodeCameralModes(magic string, batch, dim, outFeat, branches int, dtype c
 	}
 	_ = binary.Write(&in, binary.LittleEndian, shadowCoef)
 	_ = binary.Write(&in, binary.LittleEndian, surpriseThresh)
+	if writeParent {
+		_ = binary.Write(&in, binary.LittleEndian, int32(parent))
+	}
 	return in.Bytes()
 }
 
@@ -143,19 +154,28 @@ func compareCameralModes(goO, cppO cameralModesOut, requireExact bool) error {
 func runGoCameralModes(dtype core.DType, batch, dim, outFeat, branches int,
 	packed, x, target []float32, lr float64, modes []parallel.TrainMode,
 	kit parallel.CamKit) (cameralModesOut, error) {
+	return runGoCameralModesParent(dtype, batch, dim, outFeat, branches, packed, x, target, lr, modes,
+		kit, parallel.ModeNormalBP)
+}
+
+func runGoCameralModesParent(dtype core.DType, batch, dim, outFeat, branches int,
+	packed, x, target []float32, lr float64, modes []parallel.TrainMode,
+	kit parallel.CamKit, parent parallel.TrainMode) (cameralModesOut, error) {
 	var z cameralModesOut
 	cfg := parallel.Config{Dim: dim, OutFeat: outFeat, Branches: branches, Combine: parallel.CombineAdd}
 	l, err := parallel.NewConfigured[float32](cfg, dtype, quant.FormatNone, packed, nil)
 	if err != nil {
 		return z, err
 	}
-	l.SetBranchModes(modes...)
+	if len(modes) > 0 {
+		l.SetBranchModes(modes...)
+	}
 	l.SetCamKit(kit)
 	xin := core.NewTensor[float32](batch, dim)
 	copy(xin.Data, x)
 	tgt := core.NewTensor[float32](batch, outFeat)
 	copy(tgt.Data, target)
-	loss, err := parallel.TrainMSE(l, xin, tgt, parallel.ModeNormalBP, lr)
+	loss, err := parallel.TrainMSE(l, xin, tgt, parent, lr)
 	if err != nil {
 		return z, err
 	}
@@ -174,6 +194,13 @@ func runGoCameralModes(dtype core.DType, batch, dim, outFeat, branches int,
 
 func runCameralModesCase(magic, outMagic string, modes []parallel.TrainMode, kit parallel.CamKit,
 	dtype core.DType, exact bool, benchIters int) error {
+	return runCameralModesCaseParent(magic, outMagic, modes, kit, parallel.ModeNormalBP, false,
+		dtype, exact, benchIters)
+}
+
+// runCameralModesCaseParent — FZB1-style: optional trailing parent_mode on wire.
+func runCameralModesCaseParent(magic, outMagic string, modes []parallel.TrainMode, kit parallel.CamKit,
+	parent parallel.TrainMode, writeParent bool, dtype core.DType, exact bool, benchIters int) error {
 	const batch, dim, outFeat, branches = 2, 4, 4, 2
 	const lr = 1e-2
 	packed := randInit(1, branches*outFeat*dim, 0x43414d01)
@@ -188,12 +215,13 @@ func runCameralModesCase(magic, outMagic string, modes []parallel.TrainMode, kit
 	for i := range target {
 		target[i] = float32(0.05 * float64(i%outFeat+1))
 	}
-	goO, err := runGoCameralModes(dtype, batch, dim, outFeat, branches, packed, x, target, lr, modes, kit)
+	goO, err := runGoCameralModesParent(dtype, batch, dim, outFeat, branches, packed, x, target, lr,
+		modes, kit, parent)
 	if err != nil {
 		return fmt.Errorf("go: %w", err)
 	}
-	payload := encodeCameralModes(magic, batch, dim, outFeat, branches, dtype, packed, x, target, lr,
-		modes, kit.ShadowCoef, kit.SurpriseThresh)
+	payload := encodeCameralModesParent(magic, batch, dim, outFeat, branches, dtype, packed, x, target, lr,
+		modes, kit.ShadowCoef, kit.SurpriseThresh, parent, writeParent)
 	if benchIters > 0 {
 		_, _, err = runCppCameralModes(payload, outMagic, benchIters)
 		if err != nil {
@@ -208,16 +236,20 @@ func runCameralModesCase(magic, outMagic string, modes []parallel.TrainMode, kit
 }
 
 func runCameralModesSpectrum(label, magic, outMagic string, modes []parallel.TrainMode, kit parallel.CamKit) error {
+	return runCameralModesSpectrumParent(label, magic, outMagic, modes, kit, parallel.ModeNormalBP, false)
+}
+
+func runCameralModesSpectrumParent(label, magic, outMagic string, modes []parallel.TrainMode,
+	kit parallel.CamKit, parent parallel.TrainMode, writeParent bool) error {
 	const benchIters = 20
 	fmt.Printf("\n      [%s cameral ×34]\n", label)
 	fmt.Printf("      %-12s %-12s %8s %10s %10s %9s\n", "dtype", "band", "exact%W", "goµs", "cppµs", "spd%Δ")
 	var fails []string
 	for _, dt := range core.AllDTypes {
 		t0 := time.Now()
-		err := runCameralModesCase(magic, outMagic, modes, kit, dt, true, 0)
+		err := runCameralModesCaseParent(magic, outMagic, modes, kit, parent, writeParent, dt, true, 0)
 		goDur := time.Since(t0)
 		if err != nil {
-			// rebuild for timing table with bench
 			fails = append(fails, fmt.Sprintf("%s:%v", dt, err))
 			fmt.Printf("      %-12s %-12s %7s %10.2f %10s %8s  %v\n", dt, suites.DetBroken, "—",
 				float64(goDur.Nanoseconds())/1000, "—", "—", err)
@@ -237,14 +269,15 @@ func runCameralModesSpectrum(label, magic, outMagic string, modes []parallel.Tra
 		for i := range target {
 			target[i] = float32(0.05 * float64(i%outFeat+1))
 		}
-		payload := encodeCameralModes(magic, batch, dim, outFeat, branches, dt, packed, x, target, lr,
-			modes, kit.ShadowCoef, kit.SurpriseThresh)
+		payload := encodeCameralModesParent(magic, batch, dim, outFeat, branches, dt, packed, x, target, lr,
+			modes, kit.ShadowCoef, kit.SurpriseThresh, parent, writeParent)
 		_, cppDur, err := runCppCameralModes(payload, outMagic, benchIters)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s bench:%v", dt, err))
 			continue
 		}
-		goO, _ := runGoCameralModes(dt, batch, dim, outFeat, branches, packed, x, target, lr, modes, kit)
+		goO, _ := runGoCameralModesParent(dt, batch, dim, outFeat, branches, packed, x, target, lr,
+			modes, kit, parent)
 		cppO, _, _ := runCppCameralModes(payload, outMagic, 0)
 		m := suites.CompareF32Spectrum(goO.WAfter[0], cppO.WAfter[0])
 		goUS := float64(goDur.Nanoseconds()) / 1000

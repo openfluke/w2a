@@ -50,6 +50,7 @@ func CasesMeshTweenSplitTrain() []Case {
 		{Name: "ConvT3 MeshTweenSplit volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseConvTTweenSplitVol222F32(3) }},
 		{Name: "RNN MeshTweenSplit volume 2×2×2×1 Float32 — exact bits", Run: caseRNNTweenSplitVol222F32},
 		{Name: "LSTM MeshTweenSplit volume 2×2×2×1 Float32 — exact bits", Run: caseLSTMTweenSplitVol222F32},
+		{Name: "Parallel MeshTweenSplit volume 2×2×2×1 Float32 — exact bits", Run: casePnTweenSplitVol222F32},
 	}
 }
 

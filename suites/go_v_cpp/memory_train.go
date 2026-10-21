@@ -19,6 +19,7 @@ func CasesMemoryTrain() []Case {
 		{Name: "Parallel Memory gate open (thresh=0) Float32 — exact bits", Run: caseMemoryAlwaysF32},
 		{Name: "Parallel Memory gate closed (high thresh) Float32 — exact bits", Run: caseMemoryBlockedF32},
 		{Name: "Parallel Memory gate open × all 34 dtypes — spectrum", Run: caseMemoryAlwaysAllDTypes},
+		{Name: "Parallel Memory volume 2×2×2×1 Float32 — exact bits (≡ FamilyBP)", Run: casePnNBPVol222F32},
 
 		// Leaf Stack ModeMemory ≡ FamilyBP (TCB1 C++ wire)
 		{Name: "Dense Memory multi-hop Float32 — exact bits (W/loss)", Run: caseDenseMemoryMultiHopF32},

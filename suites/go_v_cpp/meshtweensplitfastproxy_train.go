@@ -50,6 +50,7 @@ func CasesMeshTweenSplitFastProxyTrain() []Case {
 		{Name: "ConvT3 MeshTweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseConvTTweenSplitFastProxyVol222F32(3) }},
 		{Name: "RNN MeshTweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseRNNTweenSplitFastProxyVol222F32},
 		{Name: "LSTM MeshTweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseLSTMTweenSplitFastProxyVol222F32},
+		{Name: "Parallel MeshTweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: casePnFastProxyVol222F32},
 	}
 }
 

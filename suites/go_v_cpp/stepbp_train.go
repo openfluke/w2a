@@ -100,6 +100,7 @@ func CasesStepBPTrain() []Case {
 		{Name: "ConvT3 MeshBP volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseConvTNBPVol222F32(3) }},
 		{Name: "RNN MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseRNNNBPVol222F32},
 		{Name: "LSTM MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseLSTMNBPVol222F32},
+		{Name: "Parallel MeshBP volume 2×2×2×1 Float32 — exact bits", Run: casePnNBPVol222F32},
 	}
 }
 

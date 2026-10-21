@@ -19,6 +19,7 @@ func CasesAdversarialTrain() []Case {
 		{Name: "Parallel Adversarial∥NormalBP Float32 — exact bits", Run: caseAdversarialMixedF32},
 		{Name: "Parallel Adversarial∥Adversarial Float32 — exact bits", Run: caseAdversarialBothF32},
 		{Name: "Parallel Adversarial∥NormalBP × all 34 dtypes — spectrum", Run: caseAdversarialMixedAllDTypes},
+		{Name: "Parallel Adversarial volume 2×2×2×1 Float32 — exact bits (≡ FamilyBP)", Run: casePnNBPVol222F32},
 
 		// Leaf Stack ModeAdversarial ≡ FamilyBP (TCB1 C++ wire)
 		{Name: "Dense Adversarial multi-hop Float32 — exact bits (W/loss)", Run: caseDenseAdversarialMultiHopF32},

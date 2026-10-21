@@ -76,7 +76,8 @@ func Cases() []Case {
 	out = append(out, CasesRNNTrain()...)
 	out = append(out, CasesLSTMTrain()...)
 	out = append(out, CasesSequentialTrain()...)
-	return append(out, CasesResidualTrain()...)
+	out = append(out, CasesResidualTrain()...)
+	return append(out, CasesMambaTrain()...)
 }
 
 func RunAll() error {

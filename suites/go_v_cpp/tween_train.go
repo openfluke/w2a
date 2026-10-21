@@ -20,6 +20,8 @@ import (
 	"github.com/openfluke/welvet/layers/layernorm"
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
+	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/layers/residual"
@@ -53,6 +55,11 @@ func CasesTweenTrain() []Case {
 		{Name: "Residual Tween 1-hop × all 34 dtypes — spectrum", Run: caseResidualTweenAllDTypes},
 		{Name: "Mamba Tween 1-hop Float32 — exact bits", Run: caseMambaTweenF32},
 		{Name: "Mamba Tween 1-hop × all 34 dtypes — spectrum", Run: caseMambaTweenAllDTypes},
+		{Name: "Metacognition Tween 1-hop Float32 — exact bits", Run: caseMetacognitionTweenF32},
+		{Name: "Metacognition Tween 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionTweenAllDTypes},
+		{Name: "GDN Tween 1-hop Float32 — exact bits", Run: caseGDNTweenF32},
+		{Name: "NestedStack Tween 1-hop Float32 — exact bits", Run: caseNestedStackTweenF32},
+		{Name: "NestedStack Tween 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackTweenAllDTypes},
 		{Name: "Embedding Tween 1-hop Float32 — exact bits", Run: caseEmbeddingTweenF32},
 		{Name: "Embedding Tween 1-hop × all 34 dtypes — spectrum", Run: caseEmbeddingTweenAllDTypes},
 		{Name: "MHA Tween 1-hop Float32 — exact bits", Run: caseMHATweenF32},
@@ -75,6 +82,9 @@ func CasesTweenTrain() []Case {
 		{Name: "Sequential Tween volume 2×2×2×1 Float32 — exact bits", Run: caseSeqTweenVol222F32},
 		{Name: "Residual Tween volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenVol222F32},
 		{Name: "Mamba Tween volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenVol222F32},
+		{Name: "Metacognition Tween volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenVol222F32},
+		{Name: "GDN Tween volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenVol222F32},
+		{Name: "NestedStack Tween volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenVol222F32},
 		{Name: "Embedding Tween volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenVol222F32},
 		{Name: "MHA Tween volume 2×2×2×1 Float32 — exact bits", Run: caseMHATweenVol222F32},
 		{Name: "CNN1 Tween volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNTweenVol222F32(1) }},
@@ -1592,3 +1602,152 @@ func runDenseTweenVolCase(depth, rows, cols, lpc, batch, benchIters int) error {
 func caseDenseTweenVol111F32() error { return runDenseTweenVolCase(1, 1, 1, 1, 1, 40) }
 func caseDenseTweenVol211F32() error { return runDenseTweenVolCase(2, 1, 1, 1, 1, 40) }
 func caseDenseTweenVol222F32() error { return runDenseTweenVolCase(2, 2, 2, 1, 1, 20) }
+
+// --- CASCADE Meta/GDN/Stack leaf (auto) ---
+
+func caseMetacognitionTweenF32() error {
+	return runMetacognitionTween(core.DTypeFloat32, true)
+}
+
+func caseMetacognitionTweenAllDTypes() error {
+	return runTweenSpectrum("Metacognition", buildMetacognitionTween)
+}
+
+func buildMetacognitionTween(dtype core.DType) (tweenOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeMcModeLeaf(dtype, 0x4d435450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return tweenOut{}, nil, err
+	}
+	st, err := newMcStack(cfg, dtype, packed)
+	if err != nil {
+		return tweenOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, seq, cfg.Dim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, cfg.Dim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTween, lr)
+	if err != nil {
+		return tweenOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	ml := st.Children[0].(*metacognition.Layer)
+	wa, err := packMetacognitionWeightsF32(ml)
+	if err != nil {
+		return tweenOut{}, nil, err
+	}
+	goO := tweenOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1Header(1, 1, batch, lr)
+	writeMcChild(buf, cfg.Dim, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.Dim)},
+		[]int32{int32(batch), int32(seq), int32(cfg.Dim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runMetacognitionTween(dtype core.DType, exact bool) error {
+	goO, payload, err := buildMetacognitionTween(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppTWB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTween(goO, cppO, exact)
+}
+
+func caseGDNTweenF32() error {
+	return runGDNTween(true)
+}
+
+func buildGDNTween() (tweenOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeGdModeLeaf(0x47444e50)
+	if err != nil {
+		return tweenOut{}, nil, err
+	}
+	st, err := newGdStack(cfg, packed)
+	if err != nil {
+		return tweenOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, seq, cfg.HiddenSize)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, cfg.HiddenSize)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTween, lr)
+	if err != nil {
+		return tweenOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	gl := st.Children[0].(*gdn.Layer)
+	wa, err := packGDNWeightsF32(gl)
+	if err != nil {
+		return tweenOut{}, nil, err
+	}
+	goO := tweenOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1Header(1, 1, batch, lr)
+	writeGdChild(buf, cfg, seq, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.HiddenSize)},
+		[]int32{int32(batch), int32(seq), int32(cfg.HiddenSize)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runGDNTween(exact bool) error {
+	goO, payload, err := buildGDNTween()
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppTWB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTween(goO, cppO, exact)
+}
+
+func caseNestedStackTweenF32() error {
+	return runNestedStackTween(core.DTypeFloat32, true)
+}
+
+func caseNestedStackTweenAllDTypes() error {
+	return runTweenSpectrum("NestedStack", buildNestedStackTween)
+}
+
+func buildNestedStackTween(dtype core.DType) (tweenOut, []byte, error) {
+	dim, nChildren, batch, seq, packed, x, tgt, lr, err := makeStModeLeaf(dtype, 0x53544b50^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return tweenOut{}, nil, err
+	}
+	st, err := buildNestedStackDense(dim, nChildren, dtype, packed)
+	if err != nil {
+		return tweenOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch*seq, dim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch*seq, dim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTween, lr)
+	if err != nil {
+		return tweenOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	wa, err := packStackWeightsF32(st)
+	if err != nil {
+		return tweenOut{}, nil, err
+	}
+	goO := tweenOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1Header(1, 1, batch, lr)
+	if err := writeNestedStackDenseChild(buf, dim, nChildren, dtype, packed); err != nil {
+		return tweenOut{}, nil, err
+	}
+	writeShapesTicks(buf, []int32{int32(batch * seq), int32(dim)},
+		[]int32{int32(batch * seq), int32(dim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runNestedStackTween(dtype core.DType, exact bool) error {
+	goO, payload, err := buildNestedStackTween(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppTWB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTween(goO, cppO, exact)
+}

@@ -19,6 +19,9 @@ import (
 	"github.com/openfluke/welvet/layers/layernorm"
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
+	"github.com/openfluke/welvet/layers/parallel"
+	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/residual"
 	"github.com/openfluke/welvet/layers/rmsnorm"
@@ -197,6 +200,30 @@ func applyTweenLocalOp(op any, gy, input, pre *core.Tensor[float32], lr float64)
 		}
 		if dW != nil && dW.Len() > 0 {
 			return mamba.ApplyGradSGD(l, dW, lr)
+		}
+	case *metacognition.Layer:
+		_, dW, err := metacognition.Backward(l, gy, input, pre)
+		if err != nil {
+			return err
+		}
+		if dW != nil && dW.Len() > 0 {
+			return metacognition.ApplyGradSGD(l, dW, lr)
+		}
+	case *gdn.Layer:
+		_, dW, err := gdn.Backward(l, gy, input, pre)
+		if err != nil {
+			return err
+		}
+		if dW != nil && dW.Len() > 0 {
+			return gdn.ApplyGradSGD(l, dW, lr)
+		}
+	case *parallel.Stack:
+		_, dW, err := parallel.BackwardStack(l, gy, input, pre)
+		if err != nil {
+			return err
+		}
+		if dW != nil && dW.Len() > 0 {
+			return parallel.ApplyGradSGDStack(l, dW, lr)
 		}
 	case *sequential.Layer:
 		// Match sequential.Forward: [B,S,D] → [B*S,D] before Dense children.
@@ -2123,4 +2150,145 @@ func caseConvTTweenVol222F32(tier int) error {
 	default:
 		return fmt.Errorf("bad convt tier %d", tier)
 	}
+}
+// --- CASCADE Meta/GDN/Stack (auto) ---
+func caseMcTweenVol222F32() error {
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	stack := depth * rows * cols * lpc
+	const lr = 1e-2
+	cfg := volMcCfg()
+	W := randInit(1, mcWeightCount(cfg), 0x4d435638)
+	for i := range W {
+		W[i] *= 0.05
+	}
+	x := randInit(batch*cfg.SeqLen, cfg.Dim, 0x4d435639)
+	for i := range x {
+		x[i] *= 0.05
+	}
+	target := make([]float32, mcVolPostLen(batch, cfg))
+	for i := range target {
+		target[i] = float32(0.05 * float64(i+1))
+	}
+	cells := make([]mcVolCell, stack)
+	for i := range cells {
+		cells[i] = mcVolCell{
+			enabled: true, dim: cfg.Dim, seq: cfg.SeqLen,
+			dtype: core.DTypeFloat32, W: append([]float32(nil), W...),
+		}
+	}
+	goO, err := runGoMcVolApply(depth, rows, cols, lpc, batch, cells, x, target, lr, applyModeTweenVolume, true)
+	if err != nil {
+		return fmt.Errorf("go: %w", err)
+	}
+	payload, err := encodeMcVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+	if err != nil {
+		return err
+	}
+	raw, _, err := runCppTweenVolRetarget(payload, "MCV1", "MCTV", "MCTO", "MCVO", 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	cppO, _, err := decodeMcVolNBP(raw)
+	if err != nil {
+		return err
+	}
+	if err := compareTweenVol(goO, cppO); err != nil {
+		return err
+	}
+	fmt.Printf("\n      Tween vol 2x2x2x1 %s loss=%.6g exact_bit", "Metacognition", goO.loss)
+	return nil
+}
+
+func caseGdTweenVol222F32() error {
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	stack := depth * rows * cols * lpc
+	const lr = 1e-2
+	cfg := volGdCfg()
+	seq := 2
+	W := randInit(1, gdnWeightCount(cfg), 0x47445638)
+	for i := range W {
+		W[i] *= 0.05
+	}
+	x := randInit(batch*seq, cfg.HiddenSize, 0x47445639)
+	for i := range x {
+		x[i] *= 0.05
+	}
+	target := make([]float32, batch*seq*cfg.HiddenSize)
+	for i := range target {
+		target[i] = float32(0.05 * float64(i+1))
+	}
+	cells := make([]gdVolCell, stack)
+	for i := range cells {
+		cells[i] = gdVolCell{
+			enabled: true, cfg: cfg, seq: seq, W: append([]float32(nil), W...),
+		}
+	}
+	goO, err := runGoGdVolApply(depth, rows, cols, lpc, batch, cells, x, target, lr, applyModeTweenVolume, true)
+	if err != nil {
+		return fmt.Errorf("go: %w", err)
+	}
+	payload, err := encodeGdVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+	if err != nil {
+		return err
+	}
+	raw, _, err := runCppTweenVolRetarget(payload, "GDV1", "GDTV", "GDTO", "GDVO", 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	cppO, _, err := decodeGdVolNBP(raw)
+	if err != nil {
+		return err
+	}
+	if err := compareTweenVol(goO, cppO); err != nil {
+		return err
+	}
+	fmt.Printf("\n      Tween vol 2x2x2x1 %s loss=%.6g exact_bit", "GDN", goO.loss)
+	return nil
+}
+
+func caseSkTweenVol222F32() error {
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	stack := depth * rows * cols * lpc
+	const lr = 1e-2
+	dim, nChildren, seq := volStCfg()
+	W := randInit(1, stWeightCount(dim, nChildren), 0x53544b38)
+	for i := range W {
+		W[i] *= 0.05
+	}
+	x := randInit(batch*seq, dim, 0x53544b39)
+	for i := range x {
+		x[i] *= 0.05
+	}
+	target := make([]float32, batch*seq*dim)
+	for i := range target {
+		target[i] = float32(0.05 * float64(i+1))
+	}
+	cells := make([]stVolCell, stack)
+	for i := range cells {
+		cells[i] = stVolCell{
+			enabled: true, dim: dim, seq: seq, depth: nChildren,
+			dtype: core.DTypeFloat32, W: append([]float32(nil), W...),
+		}
+	}
+	goO, err := runGoStVolApply(depth, rows, cols, lpc, batch, cells, x, target, lr, applyModeTweenVolume, true)
+	if err != nil {
+		return fmt.Errorf("go: %w", err)
+	}
+	payload, err := encodeStVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+	if err != nil {
+		return err
+	}
+	raw, _, err := runCppTweenVolRetarget(payload, "STKV", "SKTV", "SKTO", "STVO", 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	cppO, _, err := decodeStVolNBP(raw)
+	if err != nil {
+		return err
+	}
+	if err := compareTweenVol(goO, cppO); err != nil {
+		return err
+	}
+	fmt.Printf("\n      Tween vol 2x2x2x1 %s loss=%.6g exact_bit", "NestedStack", goO.loss)
+	return nil
 }

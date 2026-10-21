@@ -20,6 +20,8 @@ import (
 	"github.com/openfluke/welvet/layers/layernorm"
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
+	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/layers/residual"
@@ -52,6 +54,11 @@ func CasesFreezeTrain() []Case {
 		{Name: "Residual Freeze 1-hop × all 34 dtypes — spectrum", Run: caseResidualFreezeAllDTypes},
 		{Name: "Mamba Freeze 1-hop Float32 — exact bits", Run: caseMambaFreezeF32},
 		{Name: "Mamba Freeze 1-hop × all 34 dtypes — spectrum", Run: caseMambaFreezeAllDTypes},
+		{Name: "Metacognition Freeze 1-hop Float32 — exact bits", Run: caseMetacognitionFreezeF32},
+		{Name: "Metacognition Freeze 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionFreezeAllDTypes},
+		{Name: "GDN Freeze 1-hop Float32 — exact bits", Run: caseGDNFreezeF32},
+		{Name: "NestedStack Freeze 1-hop Float32 — exact bits", Run: caseNestedStackFreezeF32},
+		{Name: "NestedStack Freeze 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackFreezeAllDTypes},
 		{Name: "Embedding Freeze 1-hop Float32 — exact bits", Run: caseEmbeddingFreezeF32},
 		{Name: "Embedding Freeze 1-hop × all 34 dtypes — spectrum", Run: caseEmbeddingFreezeAllDTypes},
 		{Name: "MHA Freeze 1-hop Float32 — exact bits", Run: caseMHAFreezeF32},
@@ -74,6 +81,9 @@ func CasesFreezeTrain() []Case {
 		{Name: "Sequential Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseSeqFreezeVol222F32},
 		{Name: "Residual Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseReFreezeVol222F32},
 		{Name: "Mamba Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseMbFreezeVol222F32},
+		{Name: "Metacognition Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseMcFreezeVol222F32},
+		{Name: "GDN Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseGdFreezeVol222F32},
+		{Name: "NestedStack Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseSkFreezeVol222F32},
 		{Name: "Embedding Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingFreezeVol222F32},
 		{Name: "MHA Freeze volume 2×2×2×1 Float32 — exact bits", Run: caseMHAFreezeVol222F32},
 		{Name: "CNN1 Freeze volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNFreezeVol222F32(1) }},
@@ -1526,3 +1536,152 @@ func runDenseFreezeVolCase(depth, rows, cols, lpc, batch, benchIters int) error 
 func caseDenseFreezeVol111F32() error { return runDenseFreezeVolCase(1, 1, 1, 1, 1, 40) }
 func caseDenseFreezeVol211F32() error { return runDenseFreezeVolCase(2, 1, 1, 1, 1, 40) }
 func caseDenseFreezeVol222F32() error { return runDenseFreezeVolCase(2, 2, 2, 1, 1, 20) }
+
+// --- CASCADE Meta/GDN/Stack leaf (auto) ---
+
+func caseMetacognitionFreezeF32() error {
+	return runMetacognitionFreeze(core.DTypeFloat32, true)
+}
+
+func caseMetacognitionFreezeAllDTypes() error {
+	return runFreezeSpectrum("Metacognition", buildMetacognitionFreeze)
+}
+
+func buildMetacognitionFreeze(dtype core.DType) (freezeOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeMcModeLeaf(dtype, 0x4d435450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	st, err := newMcStack(cfg, dtype, packed)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, seq, cfg.Dim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, cfg.Dim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	if err != nil {
+		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	ml := st.Children[0].(*metacognition.Layer)
+	wa, err := packMetacognitionWeightsF32(ml)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	goO := freezeOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeFRB1Header(1, 1, batch, lr)
+	writeMcChild(buf, cfg.Dim, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.Dim)},
+		[]int32{int32(batch), int32(seq), int32(cfg.Dim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runMetacognitionFreeze(dtype core.DType, exact bool) error {
+	goO, payload, err := buildMetacognitionFreeze(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppFRB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareFreeze(goO, cppO, exact)
+}
+
+func caseGDNFreezeF32() error {
+	return runGDNFreeze(true)
+}
+
+func buildGDNFreeze() (freezeOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeGdModeLeaf(0x47444e50)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	st, err := newGdStack(cfg, packed)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, seq, cfg.HiddenSize)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, cfg.HiddenSize)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	if err != nil {
+		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	gl := st.Children[0].(*gdn.Layer)
+	wa, err := packGDNWeightsF32(gl)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	goO := freezeOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeFRB1Header(1, 1, batch, lr)
+	writeGdChild(buf, cfg, seq, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.HiddenSize)},
+		[]int32{int32(batch), int32(seq), int32(cfg.HiddenSize)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runGDNFreeze(exact bool) error {
+	goO, payload, err := buildGDNFreeze()
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppFRB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareFreeze(goO, cppO, exact)
+}
+
+func caseNestedStackFreezeF32() error {
+	return runNestedStackFreeze(core.DTypeFloat32, true)
+}
+
+func caseNestedStackFreezeAllDTypes() error {
+	return runFreezeSpectrum("NestedStack", buildNestedStackFreeze)
+}
+
+func buildNestedStackFreeze(dtype core.DType) (freezeOut, []byte, error) {
+	dim, nChildren, batch, seq, packed, x, tgt, lr, err := makeStModeLeaf(dtype, 0x53544b50^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	st, err := buildNestedStackDense(dim, nChildren, dtype, packed)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch*seq, dim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch*seq, dim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeFreeze, lr)
+	if err != nil {
+		return freezeOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	wa, err := packStackWeightsF32(st)
+	if err != nil {
+		return freezeOut{}, nil, err
+	}
+	goO := freezeOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeFRB1Header(1, 1, batch, lr)
+	if err := writeNestedStackDenseChild(buf, dim, nChildren, dtype, packed); err != nil {
+		return freezeOut{}, nil, err
+	}
+	writeShapesTicks(buf, []int32{int32(batch * seq), int32(dim)},
+		[]int32{int32(batch * seq), int32(dim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runNestedStackFreeze(dtype core.DType, exact bool) error {
+	goO, payload, err := buildNestedStackFreeze(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppFRB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareFreeze(goO, cppO, exact)
+}

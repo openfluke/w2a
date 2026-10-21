@@ -7,7 +7,6 @@ import (
 	"io"
 	"math"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/openfluke/w2a/suites"
@@ -17,6 +16,8 @@ import (
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/weights"
 )
+
+// Shared Parallel Dense Add + BranchModes harness for Adversarial / Memory / Shadow.
 
 type cameralModesOut struct {
 	loss   float64
@@ -86,12 +87,8 @@ func runCppCameralModes(payload []byte, outMagic string, benchIters int) (camera
 		raw = rest
 		bench = time.Duration(ns)
 	}
-	got := ""
-	if len(raw) >= 4 {
-		got = string(raw[:4])
-	}
-	if len(raw) < 8 || got != outMagic {
-		return z, bench, fmt.Errorf("cpp cameral bad magic want %s got %q", outMagic, got)
+	if len(raw) < 8 || string(raw[:4]) != outMagic {
+		return z, bench, fmt.Errorf("cpp cameral bad magic want %s got %q", outMagic, string(raw[:min(4, len(raw))]))
 	}
 	r := bytes.NewReader(raw[4:])
 	if err := binary.Read(r, binary.LittleEndian, &z.loss); err != nil {
@@ -175,34 +172,34 @@ func runGoCameralModes(dtype core.DType, batch, dim, outFeat, branches int,
 	return z, nil
 }
 
-func cameralFixture(dtype core.DType) (batch, dim, outFeat, branches int, packed, x, target []float32, lr float64) {
-	batch, dim, outFeat, branches = 2, 4, 4, 2
-	lr = 1e-2
-	packed = randInit(1, branches*outFeat*dim, 0x43414d01)
+func runCameralModesCase(magic, outMagic string, modes []parallel.TrainMode, kit parallel.CamKit,
+	dtype core.DType, exact bool, benchIters int) error {
+	const batch, dim, outFeat, branches = 2, 4, 4, 2
+	const lr = 1e-2
+	packed := randInit(1, branches*outFeat*dim, 0x43414d01)
 	for i := range packed {
 		packed[i] *= 0.05
 	}
-	x = randInit(batch, dim, 0x43414d02)
+	x := randInit(batch, dim, 0x43414d02)
 	for i := range x {
 		x[i] *= 0.05
 	}
-	target = make([]float32, batch*outFeat)
+	target := make([]float32, batch*outFeat)
 	for i := range target {
 		target[i] = float32(0.05 * float64(i%outFeat+1))
 	}
-	_ = dtype
-	return
-}
-
-func runCameralModesCase(magic, outMagic string, modes []parallel.TrainMode, kit parallel.CamKit,
-	dtype core.DType, exact bool) error {
-	batch, dim, outFeat, branches, packed, x, target, lr := cameralFixture(dtype)
 	goO, err := runGoCameralModes(dtype, batch, dim, outFeat, branches, packed, x, target, lr, modes, kit)
 	if err != nil {
 		return fmt.Errorf("go: %w", err)
 	}
 	payload := encodeCameralModes(magic, batch, dim, outFeat, branches, dtype, packed, x, target, lr,
 		modes, kit.ShadowCoef, kit.SurpriseThresh)
+	if benchIters > 0 {
+		_, _, err = runCppCameralModes(payload, outMagic, benchIters)
+		if err != nil {
+			return fmt.Errorf("cpp-bench: %w", err)
+		}
+	}
 	cppO, _, err := runCppCameralModes(payload, outMagic, 0)
 	if err != nil {
 		return fmt.Errorf("cpp: %w", err)
@@ -216,43 +213,62 @@ func runCameralModesSpectrum(label, magic, outMagic string, modes []parallel.Tra
 	fmt.Printf("      %-12s %-12s %8s %10s %10s %9s\n", "dtype", "band", "exact%W", "goµs", "cppµs", "spd%Δ")
 	var fails []string
 	for _, dt := range core.AllDTypes {
-		batch, dim, outFeat, branches, packed, x, target, lr := cameralFixture(dt)
 		t0 := time.Now()
-		goO, err := runGoCameralModes(dt, batch, dim, outFeat, branches, packed, x, target, lr, modes, kit)
+		err := runCameralModesCase(magic, outMagic, modes, kit, dt, true, 0)
 		goDur := time.Since(t0)
 		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s go:%v", dt, err))
-			fmt.Printf("      %-12s %-12s %7s %10s %10s %8s  %v\n", dt, suites.DetBroken, "—", "—", "—", "—", err)
+			// rebuild for timing table with bench
+			fails = append(fails, fmt.Sprintf("%s:%v", dt, err))
+			fmt.Printf("      %-12s %-12s %7s %10.2f %10s %8s  %v\n", dt, suites.DetBroken, "—",
+				float64(goDur.Nanoseconds())/1000, "—", "—", err)
 			continue
+		}
+		const batch, dim, outFeat, branches = 2, 4, 4, 2
+		const lr = 1e-2
+		packed := randInit(1, branches*outFeat*dim, 0x43414d01)
+		for i := range packed {
+			packed[i] *= 0.05
+		}
+		x := randInit(batch, dim, 0x43414d02)
+		for i := range x {
+			x[i] *= 0.05
+		}
+		target := make([]float32, batch*outFeat)
+		for i := range target {
+			target[i] = float32(0.05 * float64(i%outFeat+1))
 		}
 		payload := encodeCameralModes(magic, batch, dim, outFeat, branches, dt, packed, x, target, lr,
 			modes, kit.ShadowCoef, kit.SurpriseThresh)
 		_, cppDur, err := runCppCameralModes(payload, outMagic, benchIters)
 		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s cpp-bench:%v", dt, err))
-			fmt.Printf("      %-12s %-12s %7s %10.2f %10s %8s  %v\n", dt, suites.DetBroken, "—",
-				float64(goDur.Nanoseconds())/1000, "—", "—", err)
+			fails = append(fails, fmt.Sprintf("%s bench:%v", dt, err))
 			continue
 		}
-		cppO, _, err := runCppCameralModes(payload, outMagic, 0)
-		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s cpp:%v", dt, err))
-			fmt.Printf("      %-12s %-12s %7s %10.2f %10s %8s  %v\n", dt, suites.DetBroken, "—",
-				float64(goDur.Nanoseconds())/1000, "—", "—", err)
-			continue
-		}
+		goO, _ := runGoCameralModes(dt, batch, dim, outFeat, branches, packed, x, target, lr, modes, kit)
+		cppO, _, _ := runCppCameralModes(payload, outMagic, 0)
 		m := suites.CompareF32Spectrum(goO.WAfter[0], cppO.WAfter[0])
 		goUS := float64(goDur.Nanoseconds()) / 1000
 		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
 		spd := suites.SpeedPctDiff(goUS, cppUS)
 		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %8.1f%%\n",
 			dt, m.Band, m.ExactPct, goUS, cppUS, spd)
-		if err := compareCameralModes(goO, cppO, true); err != nil {
-			fails = append(fails, fmt.Sprintf("%s:%v", dt, err))
-		}
 	}
 	if len(fails) > 0 {
-		return fmt.Errorf("dtype fails: %s", strings.Join(fails, "; "))
+		return fmt.Errorf("dtype fails: %s", joinFails(fails))
 	}
 	return nil
+}
+
+func joinFails(fails []string) string {
+	if len(fails) == 0 {
+		return ""
+	}
+	s := fails[0]
+	for i := 1; i < len(fails) && i < 8; i++ {
+		s += "; " + fails[i]
+	}
+	if len(fails) > 8 {
+		s += fmt.Sprintf("; …+%d", len(fails)-8)
+	}
+	return s
 }

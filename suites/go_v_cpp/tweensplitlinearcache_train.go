@@ -20,6 +20,8 @@ import (
 	"github.com/openfluke/welvet/layers/layernorm"
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
+	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/layers/residual"
@@ -52,6 +54,11 @@ func CasesTweenSplitLinearCacheTrain() []Case {
 		{Name: "Residual TweenSplitLinearCache 1-hop × all 34 dtypes — spectrum", Run: caseResidualTweenSplitLinearCacheAllDTypes},
 		{Name: "Mamba TweenSplitLinearCache 1-hop Float32 — exact bits", Run: caseMambaTweenSplitLinearCacheF32},
 		{Name: "Mamba TweenSplitLinearCache 1-hop × all 34 dtypes — spectrum", Run: caseMambaTweenSplitLinearCacheAllDTypes},
+		{Name: "Metacognition TweenSplitLinearCache 1-hop Float32 — exact bits", Run: caseMetacognitionTweenSplitLinearCacheF32},
+		{Name: "Metacognition TweenSplitLinearCache 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionTweenSplitLinearCacheAllDTypes},
+		{Name: "GDN TweenSplitLinearCache 1-hop Float32 — exact bits", Run: caseGDNTweenSplitLinearCacheF32},
+		{Name: "NestedStack TweenSplitLinearCache 1-hop Float32 — exact bits", Run: caseNestedStackTweenSplitLinearCacheF32},
+		{Name: "NestedStack TweenSplitLinearCache 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackTweenSplitLinearCacheAllDTypes},
 		{Name: "Embedding TweenSplitLinearCache 1-hop Float32 — exact bits", Run: caseEmbeddingTweenSplitLinearCacheF32},
 		{Name: "Embedding TweenSplitLinearCache 1-hop × all 34 dtypes — spectrum", Run: caseEmbeddingTweenSplitLinearCacheAllDTypes},
 		{Name: "MHA TweenSplitLinearCache 1-hop Float32 — exact bits", Run: caseMHATweenSplitLinearCacheF32},
@@ -74,6 +81,9 @@ func CasesTweenSplitLinearCacheTrain() []Case {
 		{Name: "Sequential TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseSeqTweenSplitLinearCacheVol222F32},
 		{Name: "Residual TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenSplitLinearCacheVol222F32},
 		{Name: "Mamba TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenSplitLinearCacheVol222F32},
+		{Name: "Metacognition TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenSplitLinearCacheVol222F32},
+		{Name: "GDN TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenSplitLinearCacheVol222F32},
+		{Name: "NestedStack TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenSplitLinearCacheVol222F32},
 		{Name: "Embedding TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenSplitLinearCacheVol222F32},
 		{Name: "MHA TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: caseMHATweenSplitLinearCacheVol222F32},
 		{Name: "CNN1 TweenSplitLinearCache volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNTweenSplitLinearCacheVol222F32(1) }},
@@ -1526,3 +1536,152 @@ func runDenseTweenSplitLinearCacheVolCase(depth, rows, cols, lpc, batch, benchIt
 func caseDenseTweenSplitLinearCacheVol111F32() error { return runDenseTweenSplitLinearCacheVolCase(1, 1, 1, 1, 1, 40) }
 func caseDenseTweenSplitLinearCacheVol211F32() error { return runDenseTweenSplitLinearCacheVolCase(2, 1, 1, 1, 1, 40) }
 func caseDenseTweenSplitLinearCacheVol222F32() error { return runDenseTweenSplitLinearCacheVolCase(2, 2, 2, 1, 1, 20) }
+
+// --- CASCADE Meta/GDN/Stack leaf (auto) ---
+
+func caseMetacognitionTweenSplitLinearCacheF32() error {
+	return runMetacognitionTweenSplitLinearCache(core.DTypeFloat32, true)
+}
+
+func caseMetacognitionTweenSplitLinearCacheAllDTypes() error {
+	return runTweenSplitLinearCacheSpectrum("Metacognition", buildMetacognitionTweenSplitLinearCache)
+}
+
+func buildMetacognitionTweenSplitLinearCache(dtype core.DType) (tweenSplitLinearCacheOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeMcModeLeaf(dtype, 0x4d435450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, err
+	}
+	st, err := newMcStack(cfg, dtype, packed)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, seq, cfg.Dim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, cfg.Dim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenSplitLinearCache, lr)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	ml := st.Children[0].(*metacognition.Layer)
+	wa, err := packMetacognitionWeightsF32(ml)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, err
+	}
+	goO := tweenSplitLinearCacheOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1HeaderLinearCache(1, 1, batch, lr)
+	writeMcChild(buf, cfg.Dim, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.Dim)},
+		[]int32{int32(batch), int32(seq), int32(cfg.Dim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runMetacognitionTweenSplitLinearCache(dtype core.DType, exact bool) error {
+	goO, payload, err := buildMetacognitionTweenSplitLinearCache(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppLCB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTweenSplitLinearCache(goO, cppO, exact)
+}
+
+func caseGDNTweenSplitLinearCacheF32() error {
+	return runGDNTweenSplitLinearCache(true)
+}
+
+func buildGDNTweenSplitLinearCache() (tweenSplitLinearCacheOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeGdModeLeaf(0x47444e50)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, err
+	}
+	st, err := newGdStack(cfg, packed)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, seq, cfg.HiddenSize)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, cfg.HiddenSize)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenSplitLinearCache, lr)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	gl := st.Children[0].(*gdn.Layer)
+	wa, err := packGDNWeightsF32(gl)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, err
+	}
+	goO := tweenSplitLinearCacheOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1HeaderLinearCache(1, 1, batch, lr)
+	writeGdChild(buf, cfg, seq, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.HiddenSize)},
+		[]int32{int32(batch), int32(seq), int32(cfg.HiddenSize)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runGDNTweenSplitLinearCache(exact bool) error {
+	goO, payload, err := buildGDNTweenSplitLinearCache()
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppLCB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTweenSplitLinearCache(goO, cppO, exact)
+}
+
+func caseNestedStackTweenSplitLinearCacheF32() error {
+	return runNestedStackTweenSplitLinearCache(core.DTypeFloat32, true)
+}
+
+func caseNestedStackTweenSplitLinearCacheAllDTypes() error {
+	return runTweenSplitLinearCacheSpectrum("NestedStack", buildNestedStackTweenSplitLinearCache)
+}
+
+func buildNestedStackTweenSplitLinearCache(dtype core.DType) (tweenSplitLinearCacheOut, []byte, error) {
+	dim, nChildren, batch, seq, packed, x, tgt, lr, err := makeStModeLeaf(dtype, 0x53544b50^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, err
+	}
+	st, err := buildNestedStackDense(dim, nChildren, dtype, packed)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch*seq, dim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch*seq, dim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenSplitLinearCache, lr)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	wa, err := packStackWeightsF32(st)
+	if err != nil {
+		return tweenSplitLinearCacheOut{}, nil, err
+	}
+	goO := tweenSplitLinearCacheOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1HeaderLinearCache(1, 1, batch, lr)
+	if err := writeNestedStackDenseChild(buf, dim, nChildren, dtype, packed); err != nil {
+		return tweenSplitLinearCacheOut{}, nil, err
+	}
+	writeShapesTicks(buf, []int32{int32(batch * seq), int32(dim)},
+		[]int32{int32(batch * seq), int32(dim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runNestedStackTweenSplitLinearCache(dtype core.DType, exact bool) error {
+	goO, payload, err := buildNestedStackTweenSplitLinearCache(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppLCB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTweenSplitLinearCache(goO, cppO, exact)
+}

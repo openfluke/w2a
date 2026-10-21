@@ -20,6 +20,8 @@ import (
 	"github.com/openfluke/welvet/layers/layernorm"
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
+	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/layers/residual"
@@ -52,6 +54,11 @@ func CasesTweenSplitFastProxyTrain() []Case {
 		{Name: "Residual TweenSplitFastProxy 1-hop × all 34 dtypes — spectrum", Run: caseResidualTweenSplitFastProxyAllDTypes},
 		{Name: "Mamba TweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseMambaTweenSplitFastProxyF32},
 		{Name: "Mamba TweenSplitFastProxy 1-hop × all 34 dtypes — spectrum", Run: caseMambaTweenSplitFastProxyAllDTypes},
+		{Name: "Metacognition TweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseMetacognitionTweenSplitFastProxyF32},
+		{Name: "Metacognition TweenSplitFastProxy 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionTweenSplitFastProxyAllDTypes},
+		{Name: "GDN TweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseGDNTweenSplitFastProxyF32},
+		{Name: "NestedStack TweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseNestedStackTweenSplitFastProxyF32},
+		{Name: "NestedStack TweenSplitFastProxy 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackTweenSplitFastProxyAllDTypes},
 		{Name: "Embedding TweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseEmbeddingTweenSplitFastProxyF32},
 		{Name: "Embedding TweenSplitFastProxy 1-hop × all 34 dtypes — spectrum", Run: caseEmbeddingTweenSplitFastProxyAllDTypes},
 		{Name: "MHA TweenSplitFastProxy 1-hop Float32 — exact bits", Run: caseMHATweenSplitFastProxyF32},
@@ -74,6 +81,9 @@ func CasesTweenSplitFastProxyTrain() []Case {
 		{Name: "Sequential TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseSeqTweenSplitFastProxyVol222F32},
 		{Name: "Residual TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenSplitFastProxyVol222F32},
 		{Name: "Mamba TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenSplitFastProxyVol222F32},
+		{Name: "Metacognition TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenSplitFastProxyVol222F32},
+		{Name: "GDN TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenSplitFastProxyVol222F32},
+		{Name: "NestedStack TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenSplitFastProxyVol222F32},
 		{Name: "Embedding TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenSplitFastProxyVol222F32},
 		{Name: "MHA TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: caseMHATweenSplitFastProxyVol222F32},
 		{Name: "CNN1 TweenSplitFastProxy volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNTweenSplitFastProxyVol222F32(1) }},
@@ -1526,3 +1536,152 @@ func runDenseTweenSplitFastProxyVolCase(depth, rows, cols, lpc, batch, benchIter
 func caseDenseTweenSplitFastProxyVol111F32() error { return runDenseTweenSplitFastProxyVolCase(1, 1, 1, 1, 1, 40) }
 func caseDenseTweenSplitFastProxyVol211F32() error { return runDenseTweenSplitFastProxyVolCase(2, 1, 1, 1, 1, 40) }
 func caseDenseTweenSplitFastProxyVol222F32() error { return runDenseTweenSplitFastProxyVolCase(2, 2, 2, 1, 1, 20) }
+
+// --- CASCADE Meta/GDN/Stack leaf (auto) ---
+
+func caseMetacognitionTweenSplitFastProxyF32() error {
+	return runMetacognitionTweenSplitFastProxy(core.DTypeFloat32, true)
+}
+
+func caseMetacognitionTweenSplitFastProxyAllDTypes() error {
+	return runTweenSplitFastProxySpectrum("Metacognition", buildMetacognitionTweenSplitFastProxy)
+}
+
+func buildMetacognitionTweenSplitFastProxy(dtype core.DType) (tweenSplitFastProxyOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeMcModeLeaf(dtype, 0x4d435450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, err
+	}
+	st, err := newMcStack(cfg, dtype, packed)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, seq, cfg.Dim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, cfg.Dim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenSplitFastProxy, lr)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	ml := st.Children[0].(*metacognition.Layer)
+	wa, err := packMetacognitionWeightsF32(ml)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, err
+	}
+	goO := tweenSplitFastProxyOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1HeaderFastProxy(1, 1, batch, lr)
+	writeMcChild(buf, cfg.Dim, seq, dtype, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.Dim)},
+		[]int32{int32(batch), int32(seq), int32(cfg.Dim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runMetacognitionTweenSplitFastProxy(dtype core.DType, exact bool) error {
+	goO, payload, err := buildMetacognitionTweenSplitFastProxy(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppFPB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTweenSplitFastProxy(goO, cppO, exact)
+}
+
+func caseGDNTweenSplitFastProxyF32() error {
+	return runGDNTweenSplitFastProxy(true)
+}
+
+func buildGDNTweenSplitFastProxy() (tweenSplitFastProxyOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeGdModeLeaf(0x47444e50)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, err
+	}
+	st, err := newGdStack(cfg, packed)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, seq, cfg.HiddenSize)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, cfg.HiddenSize)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenSplitFastProxy, lr)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	gl := st.Children[0].(*gdn.Layer)
+	wa, err := packGDNWeightsF32(gl)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, err
+	}
+	goO := tweenSplitFastProxyOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1HeaderFastProxy(1, 1, batch, lr)
+	writeGdChild(buf, cfg, seq, packed)
+	writeShapesTicks(buf, []int32{int32(batch), int32(seq), int32(cfg.HiddenSize)},
+		[]int32{int32(batch), int32(seq), int32(cfg.HiddenSize)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runGDNTweenSplitFastProxy(exact bool) error {
+	goO, payload, err := buildGDNTweenSplitFastProxy()
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppFPB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTweenSplitFastProxy(goO, cppO, exact)
+}
+
+func caseNestedStackTweenSplitFastProxyF32() error {
+	return runNestedStackTweenSplitFastProxy(core.DTypeFloat32, true)
+}
+
+func caseNestedStackTweenSplitFastProxyAllDTypes() error {
+	return runTweenSplitFastProxySpectrum("NestedStack", buildNestedStackTweenSplitFastProxy)
+}
+
+func buildNestedStackTweenSplitFastProxy(dtype core.DType) (tweenSplitFastProxyOut, []byte, error) {
+	dim, nChildren, batch, seq, packed, x, tgt, lr, err := makeStModeLeaf(dtype, 0x53544b50^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, err
+	}
+	st, err := buildNestedStackDense(dim, nChildren, dtype, packed)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch*seq, dim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch*seq, dim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeTweenSplitFastProxy, lr)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	wa, err := packStackWeightsF32(st)
+	if err != nil {
+		return tweenSplitFastProxyOut{}, nil, err
+	}
+	goO := tweenSplitFastProxyOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeTWB1HeaderFastProxy(1, 1, batch, lr)
+	if err := writeNestedStackDenseChild(buf, dim, nChildren, dtype, packed); err != nil {
+		return tweenSplitFastProxyOut{}, nil, err
+	}
+	writeShapesTicks(buf, []int32{int32(batch * seq), int32(dim)},
+		[]int32{int32(batch * seq), int32(dim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runNestedStackTweenSplitFastProxy(dtype core.DType, exact bool) error {
+	goO, payload, err := buildNestedStackTweenSplitFastProxy(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppFPB1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareTweenSplitFastProxy(goO, cppO, exact)
+}

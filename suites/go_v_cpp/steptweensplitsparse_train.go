@@ -19,6 +19,8 @@ import (
 	"github.com/openfluke/welvet/layers/layernorm"
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
+	"github.com/openfluke/welvet/layers/metacognition"
+	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/layers/residual"
@@ -50,6 +52,11 @@ func CasesStepTweenSplitSparseTrain() []Case {
 		{Name: "Residual StepTweenSplitSparse 1-hop × all 34 dtypes — spectrum", Run: caseResidualStepTweenSplitSparseAllDTypes},
 		{Name: "Mamba StepTweenSplitSparse 1-hop Float32 — exact bits", Run: caseMambaStepTweenSplitSparseF32},
 		{Name: "Mamba StepTweenSplitSparse 1-hop × all 34 dtypes — spectrum", Run: caseMambaStepTweenSplitSparseAllDTypes},
+		{Name: "Metacognition StepTweenSplitSparse 1-hop Float32 — exact bits", Run: caseMetacognitionStepTweenSplitSparseF32},
+		{Name: "Metacognition StepTweenSplitSparse 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionStepTweenSplitSparseAllDTypes},
+		{Name: "GDN StepTweenSplitSparse 1-hop Float32 — exact bits", Run: caseGDNStepTweenSplitSparseF32},
+		{Name: "NestedStack StepTweenSplitSparse 1-hop Float32 — exact bits", Run: caseNestedStackStepTweenSplitSparseF32},
+		{Name: "NestedStack StepTweenSplitSparse 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackStepTweenSplitSparseAllDTypes},
 		{Name: "Embedding StepTweenSplitSparse 1-hop Float32 — exact bits", Run: caseEmbeddingStepTweenSplitSparseF32},
 		{Name: "Embedding StepTweenSplitSparse 1-hop × all 34 dtypes — spectrum", Run: caseEmbeddingStepTweenSplitSparseAllDTypes},
 		{Name: "MHA StepTweenSplitSparse 1-hop Float32 — exact bits", Run: caseMHAStepTweenSplitSparseF32},
@@ -73,6 +80,9 @@ func CasesStepTweenSplitSparseTrain() []Case {
 		{Name: "Sequential TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseSeqTweenSplitSparseVol222F32},
 		{Name: "Residual TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenSplitSparseVol222F32},
 		{Name: "Mamba TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenSplitSparseVol222F32},
+		{Name: "Metacognition TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseMcTweenSplitSparseVol222F32},
+		{Name: "GDN TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseGdTweenSplitSparseVol222F32},
+		{Name: "NestedStack TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseSkTweenSplitSparseVol222F32},
 		{Name: "Embedding TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenSplitSparseVol222F32},
 		{Name: "MHA TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: caseMHATweenSplitSparseVol222F32},
 		{Name: "CNN1 TweenSplitSparse volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNTweenSplitSparseVol222F32(1) }},
@@ -1355,3 +1365,151 @@ func runLSTMStepTweenSplitSparse(dtype core.DType, exact bool) error {
 	return compareStepTweenSplitSparse(goO, cppO, exact)
 }
 
+// --- CASCADE Meta/GDN/Stack leaf (auto) ---
+
+func caseMetacognitionStepTweenSplitSparseF32() error {
+	return runMetacognitionStepTweenSplitSparse(core.DTypeFloat32, true)
+}
+
+func caseMetacognitionStepTweenSplitSparseAllDTypes() error {
+	return runStepTweenSplitSparseSpectrum("Metacognition", buildMetacognitionStepTweenSplitSparse)
+}
+
+func buildMetacognitionStepTweenSplitSparse(dtype core.DType) (steptweensplitsparseOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeMcModeLeaf(dtype, 0x4d435450^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return steptweensplitsparseOut{}, nil, err
+	}
+	st, err := newMcStack(cfg, dtype, packed)
+	if err != nil {
+		return steptweensplitsparseOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, seq, cfg.Dim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, cfg.Dim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepTweenSplitSparse, lr)
+	if err != nil {
+		return steptweensplitsparseOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	ml := st.Children[0].(*metacognition.Layer)
+	wa, err := packMetacognitionWeightsF32(ml)
+	if err != nil {
+		return steptweensplitsparseOut{}, nil, err
+	}
+	goO := steptweensplitsparseOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeSSP1Header(1, 1, batch, lr)
+	writeMcChild(buf, cfg.Dim, seq, dtype, packed)
+	writeShapesTicksSSP(buf, []int32{int32(batch), int32(seq), int32(cfg.Dim)},
+		[]int32{int32(batch), int32(seq), int32(cfg.Dim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runMetacognitionStepTweenSplitSparse(dtype core.DType, exact bool) error {
+	goO, payload, err := buildMetacognitionStepTweenSplitSparse(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSSP1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareStepTweenSplitSparse(goO, cppO, exact)
+}
+
+func caseGDNStepTweenSplitSparseF32() error {
+	return runGDNStepTweenSplitSparse(true)
+}
+
+func buildGDNStepTweenSplitSparse() (steptweensplitsparseOut, []byte, error) {
+	cfg, batch, seq, packed, x, tgt, lr, err := makeGdModeLeaf(0x47444e50)
+	if err != nil {
+		return steptweensplitsparseOut{}, nil, err
+	}
+	st, err := newGdStack(cfg, packed)
+	if err != nil {
+		return steptweensplitsparseOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, seq, cfg.HiddenSize)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, seq, cfg.HiddenSize)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepTweenSplitSparse, lr)
+	if err != nil {
+		return steptweensplitsparseOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	gl := st.Children[0].(*gdn.Layer)
+	wa, err := packGDNWeightsF32(gl)
+	if err != nil {
+		return steptweensplitsparseOut{}, nil, err
+	}
+	goO := steptweensplitsparseOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeSSP1Header(1, 1, batch, lr)
+	writeGdChild(buf, cfg, seq, packed)
+	writeShapesTicksSSP(buf, []int32{int32(batch), int32(seq), int32(cfg.HiddenSize)},
+		[]int32{int32(batch), int32(seq), int32(cfg.HiddenSize)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runGDNStepTweenSplitSparse(exact bool) error {
+	goO, payload, err := buildGDNStepTweenSplitSparse()
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSSP1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareStepTweenSplitSparse(goO, cppO, exact)
+}
+
+func caseNestedStackStepTweenSplitSparseF32() error {
+	return runNestedStackStepTweenSplitSparse(core.DTypeFloat32, true)
+}
+
+func caseNestedStackStepTweenSplitSparseAllDTypes() error {
+	return runStepTweenSplitSparseSpectrum("NestedStack", buildNestedStackStepTweenSplitSparse)
+}
+
+func buildNestedStackStepTweenSplitSparse(dtype core.DType) (steptweensplitsparseOut, []byte, error) {
+	dim, nChildren, batch, seq, packed, x, tgt, lr, err := makeStModeLeaf(dtype, 0x53544b50^uint32(dtype)*0x9e3779b9)
+	if err != nil {
+		return steptweensplitsparseOut{}, nil, err
+	}
+	st, err := buildNestedStackDense(dim, nChildren, dtype, packed)
+	if err != nil {
+		return steptweensplitsparseOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch*seq, dim)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch*seq, dim)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepTweenSplitSparse, lr)
+	if err != nil {
+		return steptweensplitsparseOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	wa, err := packStackWeightsF32(st)
+	if err != nil {
+		return steptweensplitsparseOut{}, nil, err
+	}
+	goO := steptweensplitsparseOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeSSP1Header(1, 1, batch, lr)
+	if err := writeNestedStackDenseChild(buf, dim, nChildren, dtype, packed); err != nil {
+		return steptweensplitsparseOut{}, nil, err
+	}
+	writeShapesTicksSSP(buf, []int32{int32(batch * seq), int32(dim)},
+		[]int32{int32(batch * seq), int32(dim)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func runNestedStackStepTweenSplitSparse(dtype core.DType, exact bool) error {
+	goO, payload, err := buildNestedStackStepTweenSplitSparse(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSSP1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	return compareStepTweenSplitSparse(goO, cppO, exact)
+}

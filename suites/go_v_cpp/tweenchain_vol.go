@@ -1907,3 +1907,144 @@ func caseConvTTweenChainVol222F32(tier int) error {
 		return fmt.Errorf("bad convt tier %d", tier)
 	}
 }
+// --- CASCADE Meta/GDN/Stack (auto) ---
+func caseMcTweenChainVol222F32() error {
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	stack := depth * rows * cols * lpc
+	const lr = 1e-2
+	cfg := volMcCfg()
+	W := randInit(1, mcWeightCount(cfg), 0x4d435638)
+	for i := range W {
+		W[i] *= 0.05
+	}
+	x := randInit(batch*cfg.SeqLen, cfg.Dim, 0x4d435639)
+	for i := range x {
+		x[i] *= 0.05
+	}
+	target := make([]float32, mcVolPostLen(batch, cfg))
+	for i := range target {
+		target[i] = float32(0.05 * float64(i+1))
+	}
+	cells := make([]mcVolCell, stack)
+	for i := range cells {
+		cells[i] = mcVolCell{
+			enabled: true, dim: cfg.Dim, seq: cfg.SeqLen,
+			dtype: core.DTypeFloat32, W: append([]float32(nil), W...),
+		}
+	}
+	goO, err := runGoMcVolApply(depth, rows, cols, lpc, batch, cells, x, target, lr, applyModeTweenChainVolume, true)
+	if err != nil {
+		return fmt.Errorf("go: %w", err)
+	}
+	payload, err := encodeMcVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+	if err != nil {
+		return err
+	}
+	raw, _, err := runCppTweenChainVolRetarget(payload, "MCV1", "MCTC", "MCCO", "MCVO", 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	cppO, _, err := decodeMcVolNBP(raw)
+	if err != nil {
+		return err
+	}
+	if err := compareTweenChainVol(goO, cppO); err != nil {
+		return err
+	}
+	fmt.Printf("\n      TweenChain vol 2x2x2x1 %s loss=%.6g exact_bit", "Metacognition", goO.loss)
+	return nil
+}
+
+func caseGdTweenChainVol222F32() error {
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	stack := depth * rows * cols * lpc
+	const lr = 1e-2
+	cfg := volGdCfg()
+	seq := 2
+	W := randInit(1, gdnWeightCount(cfg), 0x47445638)
+	for i := range W {
+		W[i] *= 0.05
+	}
+	x := randInit(batch*seq, cfg.HiddenSize, 0x47445639)
+	for i := range x {
+		x[i] *= 0.05
+	}
+	target := make([]float32, batch*seq*cfg.HiddenSize)
+	for i := range target {
+		target[i] = float32(0.05 * float64(i+1))
+	}
+	cells := make([]gdVolCell, stack)
+	for i := range cells {
+		cells[i] = gdVolCell{
+			enabled: true, cfg: cfg, seq: seq, W: append([]float32(nil), W...),
+		}
+	}
+	goO, err := runGoGdVolApply(depth, rows, cols, lpc, batch, cells, x, target, lr, applyModeTweenChainVolume, true)
+	if err != nil {
+		return fmt.Errorf("go: %w", err)
+	}
+	payload, err := encodeGdVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+	if err != nil {
+		return err
+	}
+	raw, _, err := runCppTweenChainVolRetarget(payload, "GDV1", "GDTC", "GDCO", "GDVO", 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	cppO, _, err := decodeGdVolNBP(raw)
+	if err != nil {
+		return err
+	}
+	if err := compareTweenChainVol(goO, cppO); err != nil {
+		return err
+	}
+	fmt.Printf("\n      TweenChain vol 2x2x2x1 %s loss=%.6g exact_bit", "GDN", goO.loss)
+	return nil
+}
+
+func caseSkTweenChainVol222F32() error {
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	stack := depth * rows * cols * lpc
+	const lr = 1e-2
+	dim, nChildren, seq := volStCfg()
+	W := randInit(1, stWeightCount(dim, nChildren), 0x53544b38)
+	for i := range W {
+		W[i] *= 0.05
+	}
+	x := randInit(batch*seq, dim, 0x53544b39)
+	for i := range x {
+		x[i] *= 0.05
+	}
+	target := make([]float32, batch*seq*dim)
+	for i := range target {
+		target[i] = float32(0.05 * float64(i+1))
+	}
+	cells := make([]stVolCell, stack)
+	for i := range cells {
+		cells[i] = stVolCell{
+			enabled: true, dim: dim, seq: seq, depth: nChildren,
+			dtype: core.DTypeFloat32, W: append([]float32(nil), W...),
+		}
+	}
+	goO, err := runGoStVolApply(depth, rows, cols, lpc, batch, cells, x, target, lr, applyModeTweenChainVolume, true)
+	if err != nil {
+		return fmt.Errorf("go: %w", err)
+	}
+	payload, err := encodeStVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
+	if err != nil {
+		return err
+	}
+	raw, _, err := runCppTweenChainVolRetarget(payload, "STKV", "SKTC", "SKCO", "STVO", 0)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	cppO, _, err := decodeStVolNBP(raw)
+	if err != nil {
+		return err
+	}
+	if err := compareTweenChainVol(goO, cppO); err != nil {
+		return err
+	}
+	fmt.Printf("\n      TweenChain vol 2x2x2x1 %s loss=%.6g exact_bit", "NestedStack", goO.loss)
+	return nil
+}

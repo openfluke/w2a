@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openfluke/w2a/suites"
+	"github.com/openfluke/welvet/architecture"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/cnn1"
 	"github.com/openfluke/welvet/layers/convt1"
@@ -28,6 +29,8 @@ import (
 	"github.com/openfluke/welvet/layers/softmax"
 	"github.com/openfluke/welvet/layers/swiglu"
 	"github.com/openfluke/welvet/quant"
+	"github.com/openfluke/welvet/runtime/step"
+	"github.com/openfluke/welvet/runtime/training"
 	"github.com/openfluke/welvet/weights"
 )
 
@@ -62,6 +65,27 @@ func CasesStepBPTrain() []Case {
 		{Name: "RNN StepBP 1-hop × all 34 dtypes — spectrum", Run: caseRNNStepBPAllDTypes},
 		{Name: "LSTM StepBP 1-hop Float32 — exact bits", Run: caseLSTMStepBPF32},
 		{Name: "LSTM StepBP 1-hop × all 34 dtypes — spectrum", Run: caseLSTMStepBPAllDTypes},
+		{Name: "Dense MeshBP 1×1×1×1 Float32 — exact bits", Run: caseDenseMeshBP111F32},
+		{Name: "Dense MeshBP 2×1×1×1 chain Float32 — exact bits", Run: caseDenseMeshBP211F32},
+		{Name: "Dense MeshBP 2×2×2×1 Float32 — exact bits", Run: caseDenseMeshBP222F32},
+		{Name: "Dense MeshBP volume ModeMeshBP 2×2×2×1 Float32 — exact bits", Run: caseDenseNBPVol222F32},
+		{Name: "RMSNorm MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseRMSNormNBPVol222F32},
+		{Name: "LayerNorm MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseLayerNormNBPVol222F32},
+		{Name: "Softmax MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseSoftmaxNBPVol222F32},
+		{Name: "SwiGLU MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseSwiGLUNBPVol222F32},
+		{Name: "Sequential MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseSeqNBPVol222F32},
+		{Name: "Residual MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseReNBPVol222F32},
+		{Name: "Mamba MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseMbNBPVol222F32},
+		{Name: "Embedding MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingNBPVol222F32},
+		{Name: "MHA MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseMHANBPVol222F32},
+		{Name: "CNN1 MeshBP volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNNBPVol222F32(1) }},
+		{Name: "CNN2 MeshBP volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNNBPVol222F32(2) }},
+		{Name: "CNN3 MeshBP volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNNBPVol222F32(3) }},
+		{Name: "ConvT1 MeshBP volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseConvTNBPVol222F32(1) }},
+		{Name: "ConvT2 MeshBP volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseConvTNBPVol222F32(2) }},
+		{Name: "ConvT3 MeshBP volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseConvTNBPVol222F32(3) }},
+		{Name: "RNN MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseRNNNBPVol222F32},
+		{Name: "LSTM MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseLSTMNBPVol222F32},
 	}
 }
 
@@ -187,29 +211,55 @@ func compareStepBP(goO, cppO stepbpOut, requireExact bool) error {
 	return nil
 }
 
-// runStepBPSpectrum prints a dtype table (like Dense) then requires exact_bit on each.
-func runStepBPSpectrum(label string, run func(core.DType) error) error {
+// runStepBPSpectrum prints Dense-style dtype×speed table then requires exact_bit on each.
+func runStepBPSpectrum(label string, build func(core.DType) (stepbpOut, []byte, error)) error {
+	const benchIters = 20
 	fmt.Printf("\n      [%s StepBP ×34]\n", label)
-	fmt.Printf("      %-12s %-12s\n", "dtype", "band")
+	fmt.Printf("      %-12s %-12s %8s %10s %10s %9s\n", "dtype", "band", "exact%W", "goµs", "cppµs", "spd%Δ")
 	var fails []string
-	worst := suites.DetExactBit
 	for _, dt := range core.AllDTypes {
-		err := run(dt)
-		band := suites.DetExactBit
+		t0 := time.Now()
+		goO, payload, err := build(dt)
+		goDur := time.Since(t0)
 		if err != nil {
-			fails = append(fails, fmt.Sprintf("%s:%v", dt, err))
-			band = suites.DetBroken
-			fmt.Printf("      %-12s %-12s  %v\n", dt, band, err)
-		} else {
-			fmt.Printf("      %-12s %-12s\n", dt, band)
+			fails = append(fails, fmt.Sprintf("%s go:%v", dt, err))
+			fmt.Printf("      %-12s %-12s %7s %10s %10s %8s  %v\n", dt, suites.DetBroken, "—", "—", "—", "—", err)
+			continue
 		}
-		if band.Percent() < worst.Percent() {
-			worst = band
+		_, cppDur, err := runCppSTB1(payload, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cpp-bench:%v", dt, err))
+			fmt.Printf("      %-12s %-12s %7s %10.2f %10s %8s  %v\n", dt, suites.DetBroken, "—", float64(goDur.Nanoseconds())/1000, "—", "—", err)
+			continue
+		}
+		cppO, _, err := runCppSTB1(payload, 0)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cpp:%v", dt, err))
+			fmt.Printf("      %-12s %-12s %7s %10.2f %10s %8s  %v\n", dt, suites.DetBroken, "—", float64(goDur.Nanoseconds())/1000, "—", "—", err)
+			continue
+		}
+		var m suites.DetMetrics
+		if len(goO.WAfter) > 0 && len(goO.WAfter[0]) > 0 {
+			m = suites.CompareF32Spectrum(goO.WAfter[0], cppO.WAfter[0])
+		} else {
+			// weightless (e.g. Softmax): band from loss bits
+			m = suites.DetMetrics{Band: suites.DetExactBit, ExactPct: 100}
+			if goO.loss != cppO.loss {
+				m.Band = suites.DetBroken
+				m.ExactPct = 0
+			}
+		}
+		goUS := float64(goDur.Nanoseconds()) / 1000
+		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		spd := suites.SpeedPctDiff(goUS, cppUS)
+		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %8.1f%%\n",
+			dt, m.Band, m.ExactPct, goUS, cppUS, spd)
+		if err := compareStepBP(goO, cppO, true); err != nil {
+			fails = append(fails, fmt.Sprintf("%s:%v", dt, err))
 		}
 	}
-	fmt.Printf("      worst_band=%s — want exact_bit on all 34\n", worst)
 	if len(fails) > 0 {
-		return fmt.Errorf("%d dtype issues: %s", len(fails), strings.Join(fails, " | "))
+		return fmt.Errorf("dtype fails: %s", strings.Join(fails, "; "))
 	}
 	return nil
 }
@@ -421,12 +471,11 @@ func caseRMSNormStepBPF32() error {
 }
 
 func caseRMSNormStepBPAllDTypes() error {
-	return runStepBPSpectrum("RMSNorm", func(dt core.DType) error {
-		return runRMSNormStepBP(dt, true)
-	})
+	return runStepBPSpectrum("RMSNorm", buildRMSNormStepBP)
 }
 
-func runRMSNormStepBP(dtype core.DType, exact bool) error {
+func buildRMSNormStepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
 	const batch, dim = 2, 4
 	lr := 1e-2
 	gamma, x := makeRMSGammaInit(dim, batch)
@@ -437,13 +486,13 @@ func runRMSNormStepBP(dtype core.DType, exact bool) error {
 	cfg := rmsnorm.Config{Dim: dim, Eps: 1e-6}
 	l, err := rmsnorm.NewConfigured(cfg, dtype, quant.FormatNone, gamma)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	l.Exec.Backend = core.BackendCPUTiled
 	l.Exec.MultiCore = false
 	st, err := parallel.NewStack(l)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	xin := core.NewTensor[float32](batch, dim)
 	copy(xin.Data, x)
@@ -451,11 +500,11 @@ func runRMSNormStepBP(dtype core.DType, exact bool) error {
 	copy(target.Data, tgt)
 	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
 	if err != nil {
-		return fmt.Errorf("go: %w", err)
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
 	}
 	ga, err := weights.MatrixF32(st.Children[0].(*rmsnorm.Layer).Gamma)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	goO := stepbpOut{loss: loss, WAfter: [][]float32{ga}}
 
@@ -468,7 +517,15 @@ func runRMSNormStepBP(dtype core.DType, exact bool) error {
 		_ = binary.Write(in, binary.LittleEndian, v)
 	}
 	writeShapesTicks(in, []int32{batch, dim}, []int32{batch, dim}, [][]float32{x}, [][]float32{tgt})
-	cppO, _, err := runCppSTB1(in.Bytes(), 0)
+	return goO, in.Bytes(), nil
+}
+
+func runRMSNormStepBP(dtype core.DType, exact bool) error {
+	goO, payload, err := buildRMSNormStepBP(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTB1(payload, 0)
 	if err != nil {
 		return fmt.Errorf("cpp: %w", err)
 	}
@@ -480,12 +537,11 @@ func caseLayerNormStepBPF32() error {
 }
 
 func caseLayerNormStepBPAllDTypes() error {
-	return runStepBPSpectrum("LayerNorm", func(dt core.DType) error {
-		return runLayerNormStepBP(dt, true)
-	})
+	return runStepBPSpectrum("LayerNorm", buildLayerNormStepBP)
 }
 
-func runLayerNormStepBP(dtype core.DType, exact bool) error {
+func buildLayerNormStepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
 	const batch, dim = 2, 4
 	lr := 1e-2
 	gamma, x := makeRMSGammaInit(dim, batch)
@@ -500,13 +556,13 @@ func runLayerNormStepBP(dtype core.DType, exact bool) error {
 	cfg := layernorm.Config{Dim: dim, Eps: 1e-5}
 	l, err := layernorm.NewConfigured(cfg, dtype, quant.FormatNone, gamma, beta)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	l.Exec.Backend = core.BackendCPUTiled
 	l.Exec.MultiCore = false
 	st, err := parallel.NewStack(l)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	xin := core.NewTensor[float32](batch, dim)
 	copy(xin.Data, x)
@@ -514,16 +570,16 @@ func runLayerNormStepBP(dtype core.DType, exact bool) error {
 	copy(target.Data, tgt)
 	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
 	if err != nil {
-		return fmt.Errorf("go: %w", err)
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
 	}
 	ll := st.Children[0].(*layernorm.Layer)
 	gA, err := weights.MatrixF32(ll.Gamma)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	bA, err := weights.MatrixF32(ll.Beta)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	goO := stepbpOut{loss: loss, WAfter: [][]float32{append(append([]float32(nil), gA...), bA...)}}
 
@@ -539,7 +595,15 @@ func runLayerNormStepBP(dtype core.DType, exact bool) error {
 		_ = binary.Write(in, binary.LittleEndian, v)
 	}
 	writeShapesTicks(in, []int32{batch, dim}, []int32{batch, dim}, [][]float32{x}, [][]float32{tgt})
-	cppO, _, err := runCppSTB1(in.Bytes(), 0)
+	return goO, in.Bytes(), nil
+}
+
+func runLayerNormStepBP(dtype core.DType, exact bool) error {
+	goO, payload, err := buildLayerNormStepBP(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTB1(payload, 0)
 	if err != nil {
 		return fmt.Errorf("cpp: %w", err)
 	}
@@ -551,12 +615,11 @@ func caseSoftmaxStepBPF32() error {
 }
 
 func caseSoftmaxStepBPAllDTypes() error {
-	return runStepBPSpectrum("Softmax", func(dt core.DType) error {
-		return runSoftmaxStepBP(dt, true)
-	})
+	return runStepBPSpectrum("Softmax", buildSoftmaxStepBP)
 }
 
-func runSoftmaxStepBP(dtype core.DType, exact bool) error {
+func buildSoftmaxStepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
 	const batch, dim = 2, 4
 	lr := 1e-2
 	x := []float32{0.5, -0.2, 0.1, 0.3, -0.4, 0.6, 0.2, -0.1}
@@ -564,14 +627,14 @@ func runSoftmaxStepBP(dtype core.DType, exact bool) error {
 	cfg := softmax.Config{Dim: dim, Kind: softmax.KindStandard, Temperature: 1}
 	l, err := softmax.New(cfg)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	_ = l.SetDType(dtype)
 	l.Exec.Backend = core.BackendCPUTiled
 	l.Exec.MultiCore = false
 	st, err := parallel.NewStack(l)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	xin := core.NewTensor[float32](batch, dim)
 	copy(xin.Data, x)
@@ -579,7 +642,7 @@ func runSoftmaxStepBP(dtype core.DType, exact bool) error {
 	copy(target.Data, tgt)
 	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
 	if err != nil {
-		return fmt.Errorf("go: %w", err)
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
 	}
 	goO := stepbpOut{loss: loss, WAfter: [][]float32{{}}}
 
@@ -590,7 +653,15 @@ func runSoftmaxStepBP(dtype core.DType, exact bool) error {
 	_ = binary.Write(in, binary.LittleEndian, int32(0)) // Standard
 	_ = binary.Write(in, binary.LittleEndian, 1.0)
 	writeShapesTicks(in, []int32{batch, dim}, []int32{batch, dim}, [][]float32{x}, [][]float32{tgt})
-	cppO, _, err := runCppSTB1(in.Bytes(), 0)
+	return goO, in.Bytes(), nil
+}
+
+func runSoftmaxStepBP(dtype core.DType, exact bool) error {
+	goO, payload, err := buildSoftmaxStepBP(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTB1(payload, 0)
 	if err != nil {
 		return fmt.Errorf("cpp: %w", err)
 	}
@@ -602,12 +673,11 @@ func caseSwiGLUStepBPF32() error {
 }
 
 func caseSwiGLUStepBPAllDTypes() error {
-	return runStepBPSpectrum("SwiGLU", func(dt core.DType) error {
-		return runSwiGLUStepBP(dt, true)
-	})
+	return runStepBPSpectrum("SwiGLU", buildSwiGLUStepBP)
 }
 
-func runSwiGLUStepBP(dtype core.DType, exact bool) error {
+func buildSwiGLUStepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
 	const batch, inDim, inter = 2, 4, 8
 	lr := 1e-2
 	ng := inter * inDim
@@ -626,13 +696,13 @@ func runSwiGLUStepBP(dtype core.DType, exact bool) error {
 	cfg := swiglu.Config{InputDim: inDim, IntermediateDim: inter}
 	l, err := swiglu.NewConfigured(cfg, dtype, quant.FormatNone, packed[:ng], packed[ng:ng+nu], packed[ng+nu:])
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	l.Exec.Backend = core.BackendCPUTiled
 	l.Exec.MultiCore = false
 	st, err := parallel.NewStack(l)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	xin := core.NewTensor[float32](batch, inDim)
 	copy(xin.Data, x)
@@ -640,20 +710,20 @@ func runSwiGLUStepBP(dtype core.DType, exact bool) error {
 	copy(target.Data, tgt)
 	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
 	if err != nil {
-		return fmt.Errorf("go: %w", err)
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
 	}
 	sl := st.Children[0].(*swiglu.Layer)
 	gW, err := weights.MatrixF32(sl.Gate.Weights)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	uW, err := weights.MatrixF32(sl.Up.Weights)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	dW, err := weights.MatrixF32(sl.Down.Weights)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	wa := append(append(append([]float32(nil), gW...), uW...), dW...)
 	goO := stepbpOut{loss: loss, WAfter: [][]float32{wa}}
@@ -667,7 +737,15 @@ func runSwiGLUStepBP(dtype core.DType, exact bool) error {
 		_ = binary.Write(buf, binary.LittleEndian, v)
 	}
 	writeShapesTicks(buf, []int32{batch, inDim}, []int32{batch, inDim}, [][]float32{x}, [][]float32{tgt})
-	cppO, _, err := runCppSTB1(buf.Bytes(), 0)
+	return goO, buf.Bytes(), nil
+}
+
+func runSwiGLUStepBP(dtype core.DType, exact bool) error {
+	goO, payload, err := buildSwiGLUStepBP(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTB1(payload, 0)
 	if err != nil {
 		return fmt.Errorf("cpp: %w", err)
 	}
@@ -679,8 +757,8 @@ func caseSequentialStepBPF32() error {
 }
 
 func caseSequentialStepBPAllDTypes() error {
-	return runStepBPSpectrum("Sequential", func(dt core.DType) error {
-		return runSeqResStepBP(true, dt, true)
+	return runStepBPSpectrum("Sequential", func(dt core.DType) (stepbpOut, []byte, error) {
+		return buildSeqResStepBP(true, dt)
 	})
 }
 
@@ -689,12 +767,13 @@ func caseResidualStepBPF32() error {
 }
 
 func caseResidualStepBPAllDTypes() error {
-	return runStepBPSpectrum("Residual", func(dt core.DType) error {
-		return runSeqResStepBP(false, dt, true)
+	return runStepBPSpectrum("Residual", func(dt core.DType) (stepbpOut, []byte, error) {
+		return buildSeqResStepBP(false, dt)
 	})
 }
 
-func runSeqResStepBP(isSeq bool, dtype core.DType, exact bool) error {
+func buildSeqResStepBP(isSeq bool, dtype core.DType) (stepbpOut, []byte, error) {
+
 	const batch, dim, depth, seq = 2, 4, 2, 1
 	lr := 1e-2
 	packed := make([]float32, depth*dim*dim)
@@ -712,7 +791,7 @@ func runSeqResStepBP(isSeq bool, dtype core.DType, exact bool) error {
 		cfg := sequential.Config{Dim: dim, SeqLen: seq, Depth: depth}
 		l, err := sequential.NewConfigured(cfg, dtype, quant.FormatNone, packed)
 		if err != nil {
-			return err
+			return stepbpOut{}, nil, err
 		}
 		l.Exec.Backend = core.BackendCPUTiled
 		l.Exec.MultiCore = false
@@ -721,7 +800,7 @@ func runSeqResStepBP(isSeq bool, dtype core.DType, exact bool) error {
 		cfg := residual.Config{Dim: dim, SeqLen: seq, Depth: depth}
 		l, err := residual.NewConfigured(cfg, dtype, quant.FormatNone, packed)
 		if err != nil {
-			return err
+			return stepbpOut{}, nil, err
 		}
 		l.Exec.Backend = core.BackendCPUTiled
 		l.Exec.MultiCore = false
@@ -729,7 +808,7 @@ func runSeqResStepBP(isSeq bool, dtype core.DType, exact bool) error {
 	}
 	st, err := parallel.NewStack(op)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	xin := core.NewTensor[float32](batch, dim)
 	copy(xin.Data, x)
@@ -737,7 +816,7 @@ func runSeqResStepBP(isSeq bool, dtype core.DType, exact bool) error {
 	copy(target.Data, tgt)
 	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
 	if err != nil {
-		return fmt.Errorf("go: %w", err)
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
 	}
 	var wa []float32
 	if isSeq {
@@ -745,7 +824,7 @@ func runSeqResStepBP(isSeq bool, dtype core.DType, exact bool) error {
 		for _, ch := range sl.Children {
 			w, err := weights.MatrixF32(ch.Weights)
 			if err != nil {
-				return err
+				return stepbpOut{}, nil, err
 			}
 			wa = append(wa, w...)
 		}
@@ -754,7 +833,7 @@ func runSeqResStepBP(isSeq bool, dtype core.DType, exact bool) error {
 		for _, ch := range rl.Children {
 			w, err := weights.MatrixF32(ch.Weights)
 			if err != nil {
-				return err
+				return stepbpOut{}, nil, err
 			}
 			wa = append(wa, w...)
 		}
@@ -776,7 +855,15 @@ func runSeqResStepBP(isSeq bool, dtype core.DType, exact bool) error {
 		_ = binary.Write(buf, binary.LittleEndian, v)
 	}
 	writeShapesTicks(buf, []int32{batch, dim}, []int32{batch, dim}, [][]float32{x}, [][]float32{tgt})
-	cppO, _, err := runCppSTB1(buf.Bytes(), 0)
+	return goO, buf.Bytes(), nil
+}
+
+func runSeqResStepBP(isSeq bool, dtype core.DType, exact bool) error {
+	goO, payload, err := buildSeqResStepBP(isSeq, dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTB1(payload, 0)
 	if err != nil {
 		return fmt.Errorf("cpp: %w", err)
 	}
@@ -788,19 +875,18 @@ func caseMambaStepBPF32() error {
 }
 
 func caseMambaStepBPAllDTypes() error {
-	return runStepBPSpectrum("Mamba", func(dt core.DType) error {
-		return runMambaStepBP(dt, true)
-	})
+	return runStepBPSpectrum("Mamba", buildMambaStepBP)
 }
 
-func runMambaStepBP(dtype core.DType, exact bool) error {
+func buildMambaStepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
 	cfg := mamba.Config{DModel: 4, DState: 2, Expand: 2, SeqLen: 2}
 	const batch = 2
 	lr := 1e-2
 	// Same init family as Mamba NormalBP leaf spectrum (avoids pathological tiny-dtype packs).
 	fc, err := makeMbLeafCase(cfg, batch, dtype, 0x53545042^uint32(dtype)*0x9e3779b9)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	packed := fc.W
 	x := fc.x
@@ -808,16 +894,16 @@ func runMambaStepBP(dtype core.DType, exact bool) error {
 	lr = fc.lr
 	inInit, outInit, aLog, dSkip, err := splitMambaPacked(cfg, packed)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	l, err := mamba.NewConfigured(cfg, dtype, quant.FormatNone, inInit, outInit, aLog, dSkip)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	disableMambaTrain(l)
 	st, err := parallel.NewStack(l)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	xin := core.NewTensor[float32](batch, cfg.SeqLen, cfg.DModel)
 	copy(xin.Data, x)
@@ -825,12 +911,12 @@ func runMambaStepBP(dtype core.DType, exact bool) error {
 	copy(target.Data, tgt)
 	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
 	if err != nil {
-		return fmt.Errorf("go: %w", err)
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
 	}
 	ml := st.Children[0].(*mamba.Layer)
 	wa, err := packMambaWeightsF32(ml)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	goO := stepbpOut{loss: loss, WAfter: [][]float32{wa}}
 
@@ -846,7 +932,15 @@ func runMambaStepBP(dtype core.DType, exact bool) error {
 	}
 	writeShapesTicks(buf, []int32{batch, int32(cfg.SeqLen), int32(cfg.DModel)},
 		[]int32{batch, int32(cfg.SeqLen), int32(cfg.DModel)}, [][]float32{x}, [][]float32{tgt})
-	cppO, _, err := runCppSTB1(buf.Bytes(), 0)
+	return goO, buf.Bytes(), nil
+}
+
+func runMambaStepBP(dtype core.DType, exact bool) error {
+	goO, payload, err := buildMambaStepBP(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTB1(payload, 0)
 	if err != nil {
 		return fmt.Errorf("cpp: %w", err)
 	}
@@ -855,12 +949,11 @@ func runMambaStepBP(dtype core.DType, exact bool) error {
 
 func caseEmbeddingStepBPF32() error { return runEmbeddingStepBP(core.DTypeFloat32, true) }
 func caseEmbeddingStepBPAllDTypes() error {
-	return runStepBPSpectrum("Embedding", func(dt core.DType) error {
-		return runEmbeddingStepBP(dt, true)
-	})
+	return runStepBPSpectrum("Embedding", buildEmbeddingStepBP)
 }
 
-func runEmbeddingStepBP(dtype core.DType, exact bool) error {
+func buildEmbeddingStepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
 	const batch, vocab, emb, seq = 2, 8, 4, 3
 	lr := 1e-2
 	W, x := makeEmbeddingTrainInit(vocab, emb, batch, seq, 0x5354454d)
@@ -871,13 +964,13 @@ func runEmbeddingStepBP(dtype core.DType, exact bool) error {
 	cfg := embedding.Config{VocabSize: vocab, EmbeddingDim: emb, SeqLen: seq}
 	l, err := embedding.NewConfigured(cfg, dtype, quant.FormatNone, W)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	l.Exec.Backend = core.BackendCPUTiled
 	l.Exec.MultiCore = false
 	st, err := parallel.NewStack(l)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	xin := core.NewTensor[float32](batch, seq)
 	copy(xin.Data, x)
@@ -885,11 +978,11 @@ func runEmbeddingStepBP(dtype core.DType, exact bool) error {
 	copy(target.Data, tgt)
 	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
 	if err != nil {
-		return fmt.Errorf("go: %w", err)
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
 	}
 	wa, err := weights.MatrixF32(st.Children[0].(*embedding.Layer).Weights)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	goO := stepbpOut{loss: loss, WAfter: [][]float32{wa}}
 	buf := encodeSTB1Header(1, 1, batch, lr)
@@ -903,7 +996,15 @@ func runEmbeddingStepBP(dtype core.DType, exact bool) error {
 		_ = binary.Write(buf, binary.LittleEndian, v)
 	}
 	writeShapesTicks(buf, []int32{batch, seq}, []int32{batch, seq, emb}, [][]float32{x}, [][]float32{tgt})
-	cppO, _, err := runCppSTB1(buf.Bytes(), 0)
+	return goO, buf.Bytes(), nil
+}
+
+func runEmbeddingStepBP(dtype core.DType, exact bool) error {
+	goO, payload, err := buildEmbeddingStepBP(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTB1(payload, 0)
 	if err != nil {
 		return fmt.Errorf("cpp: %w", err)
 	}
@@ -912,29 +1013,28 @@ func runEmbeddingStepBP(dtype core.DType, exact bool) error {
 
 func caseMHAStepBPF32() error { return runMHAStepBP(core.DTypeFloat32, true) }
 func caseMHAStepBPAllDTypes() error {
-	return runStepBPSpectrum("MHA", func(dt core.DType) error {
-		return runMHAStepBP(dt, true)
-	})
+	return runStepBPSpectrum("MHA", buildMHAStepBP)
 }
 
-func runMHAStepBP(dtype core.DType, exact bool) error {
+func buildMHAStepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
 	cfg := mha.DecoderCausal(8, 2, 2)
 	cfg.MaxSeqLen = 16
 	const batch, seq = 2, 4
 	fc, err := makeMHANBPCase(cfg, batch, seq, dtype, 0x534d4841, 1e-2)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	c := fc.cfg // validated
 	l, err := mha.NewConfigured(c, dtype, quant.FormatNone, fc.q, fc.k, fc.v, fc.o)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	l.Exec.Backend = core.BackendCPUTiled
 	l.Exec.MultiCore = false
 	st, err := parallel.NewStack(l)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	xin := core.NewTensor[float32](batch, seq, c.DModel)
 	copy(xin.Data, fc.x)
@@ -942,11 +1042,11 @@ func runMHAStepBP(dtype core.DType, exact bool) error {
 	copy(target.Data, fc.target)
 	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, fc.lr)
 	if err != nil {
-		return fmt.Errorf("go: %w", err)
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
 	}
 	wa, err := exportMHAWeights(st.Children[0].(*mha.Layer))
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	goO := stepbpOut{loss: loss, WAfter: [][]float32{wa}}
 	buf := encodeSTB1Header(1, 1, batch, fc.lr)
@@ -967,7 +1067,15 @@ func runMHAStepBP(dtype core.DType, exact bool) error {
 	}
 	writeShapesTicks(buf, []int32{batch, seq, int32(c.DModel)}, []int32{batch, seq, int32(c.DModel)},
 		[][]float32{fc.x}, [][]float32{fc.target})
-	cppO, _, err := runCppSTB1(buf.Bytes(), 0)
+	return goO, buf.Bytes(), nil
+}
+
+func runMHAStepBP(dtype core.DType, exact bool) error {
+	goO, payload, err := buildMHAStepBP(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTB1(payload, 0)
 	if err != nil {
 		return fmt.Errorf("cpp: %w", err)
 	}
@@ -976,12 +1084,11 @@ func runMHAStepBP(dtype core.DType, exact bool) error {
 
 func caseCNN1StepBPF32() error { return runCNN1StepBP(core.DTypeFloat32, true) }
 func caseCNN1StepBPAllDTypes() error {
-	return runStepBPSpectrum("CNN1", func(dt core.DType) error {
-		return runCNN1StepBP(dt, true)
-	})
+	return runStepBPSpectrum("CNN1", buildCNN1StepBP)
 }
 
-func runCNN1StepBP(dtype core.DType, exact bool) error {
+func buildCNN1StepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
 	cfg := preservingCNN1()
 	const batch = 2
 	lr := 1e-2
@@ -996,13 +1103,13 @@ func runCNN1StepBP(dtype core.DType, exact bool) error {
 	}
 	l, err := cnn1.NewConfigured(cfg, dtype, quant.FormatNone, W)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	l.Exec.Backend = core.BackendCPUTiled
 	l.Exec.MultiCore = false
 	st, err := parallel.NewStack(l)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	xin := core.NewTensor[float32](batch, cfg.InChannels, cfg.SeqLen)
 	copy(xin.Data, x)
@@ -1010,11 +1117,11 @@ func runCNN1StepBP(dtype core.DType, exact bool) error {
 	copy(target.Data, tgt)
 	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
 	if err != nil {
-		return fmt.Errorf("go: %w", err)
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
 	}
 	wa, err := weights.MatrixF32(st.Children[0].(*cnn1.Layer).Proj.Weights)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	goO := stepbpOut{loss: loss, WAfter: [][]float32{wa}}
 	buf := encodeSTB1Header(1, 1, batch, lr)
@@ -1032,7 +1139,15 @@ func runCNN1StepBP(dtype core.DType, exact bool) error {
 	}
 	writeShapesTicks(buf, []int32{batch, int32(cfg.InChannels), int32(cfg.SeqLen)},
 		[]int32{batch, int32(cfg.Filters), int32(outLen)}, [][]float32{x}, [][]float32{tgt})
-	cppO, _, err := runCppSTB1(buf.Bytes(), 0)
+	return goO, buf.Bytes(), nil
+}
+
+func runCNN1StepBP(dtype core.DType, exact bool) error {
+	goO, payload, err := buildCNN1StepBP(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTB1(payload, 0)
 	if err != nil {
 		return fmt.Errorf("cpp: %w", err)
 	}
@@ -1041,12 +1156,11 @@ func runCNN1StepBP(dtype core.DType, exact bool) error {
 
 func caseConvT1StepBPF32() error { return runConvT1StepBP(core.DTypeFloat32, true) }
 func caseConvT1StepBPAllDTypes() error {
-	return runStepBPSpectrum("ConvT1", func(dt core.DType) error {
-		return runConvT1StepBP(dt, true)
-	})
+	return runStepBPSpectrum("ConvT1", buildConvT1StepBP)
 }
 
-func runConvT1StepBP(dtype core.DType, exact bool) error {
+func buildConvT1StepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
 	cfg := preservingConvT1()
 	const batch = 2
 	lr := 1e-2
@@ -1061,13 +1175,13 @@ func runConvT1StepBP(dtype core.DType, exact bool) error {
 	}
 	l, err := convt1.NewConfigured(cfg, dtype, quant.FormatNone, W)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	l.Exec.Backend = core.BackendCPUTiled
 	l.Exec.MultiCore = false
 	st, err := parallel.NewStack(l)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	xin := core.NewTensor[float32](batch, cfg.InChannels, cfg.SeqLen)
 	copy(xin.Data, x)
@@ -1075,11 +1189,11 @@ func runConvT1StepBP(dtype core.DType, exact bool) error {
 	copy(target.Data, tgt)
 	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
 	if err != nil {
-		return fmt.Errorf("go: %w", err)
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
 	}
 	wa, err := weights.MatrixF32(st.Children[0].(*convt1.Layer).Proj.Weights)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	goO := stepbpOut{loss: loss, WAfter: [][]float32{wa}}
 	buf := encodeSTB1Header(1, 1, batch, lr)
@@ -1098,7 +1212,15 @@ func runConvT1StepBP(dtype core.DType, exact bool) error {
 	}
 	writeShapesTicks(buf, []int32{batch, int32(cfg.InChannels), int32(cfg.SeqLen)},
 		[]int32{batch, int32(cfg.Filters), int32(outLen)}, [][]float32{x}, [][]float32{tgt})
-	cppO, _, err := runCppSTB1(buf.Bytes(), 0)
+	return goO, buf.Bytes(), nil
+}
+
+func runConvT1StepBP(dtype core.DType, exact bool) error {
+	goO, payload, err := buildConvT1StepBP(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTB1(payload, 0)
 	if err != nil {
 		return fmt.Errorf("cpp: %w", err)
 	}
@@ -1107,12 +1229,11 @@ func runConvT1StepBP(dtype core.DType, exact bool) error {
 
 func caseRNNStepBPF32() error { return runRNNStepBP(core.DTypeFloat32, true) }
 func caseRNNStepBPAllDTypes() error {
-	return runStepBPSpectrum("RNN", func(dt core.DType) error {
-		return runRNNStepBP(dt, true)
-	})
+	return runStepBPSpectrum("RNN", buildRNNStepBP)
 }
 
-func runRNNStepBP(dtype core.DType, exact bool) error {
+func buildRNNStepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
 	cfg := smokeRNNCfg()
 	const batch = 2
 	lr := 1e-2
@@ -1125,12 +1246,12 @@ func runRNNStepBP(dtype core.DType, exact bool) error {
 	}
 	l, err := rnn.NewConfigured(cfg, dtype, quant.FormatNone, W)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	disableRNN(l)
 	st, err := parallel.NewStack(l)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	xin := core.NewTensor[float32](batch, cfg.SeqLen, cfg.InputSize)
 	copy(xin.Data, x)
@@ -1138,11 +1259,11 @@ func runRNNStepBP(dtype core.DType, exact bool) error {
 	copy(target.Data, tgt)
 	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
 	if err != nil {
-		return fmt.Errorf("go: %w", err)
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
 	}
 	wa, err := packRNNWeightsF32(st.Children[0].(*rnn.Layer))
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	goO := stepbpOut{loss: loss, WAfter: [][]float32{wa}}
 	buf := encodeSTB1Header(1, 1, batch, lr)
@@ -1156,7 +1277,15 @@ func runRNNStepBP(dtype core.DType, exact bool) error {
 	}
 	writeShapesTicks(buf, []int32{batch, int32(cfg.SeqLen), int32(cfg.InputSize)},
 		[]int32{batch, int32(cfg.SeqLen), int32(cfg.HiddenSize)}, [][]float32{x}, [][]float32{tgt})
-	cppO, _, err := runCppSTB1(buf.Bytes(), 0)
+	return goO, buf.Bytes(), nil
+}
+
+func runRNNStepBP(dtype core.DType, exact bool) error {
+	goO, payload, err := buildRNNStepBP(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTB1(payload, 0)
 	if err != nil {
 		return fmt.Errorf("cpp: %w", err)
 	}
@@ -1165,12 +1294,11 @@ func runRNNStepBP(dtype core.DType, exact bool) error {
 
 func caseLSTMStepBPF32() error { return runLSTMStepBP(core.DTypeFloat32, true) }
 func caseLSTMStepBPAllDTypes() error {
-	return runStepBPSpectrum("LSTM", func(dt core.DType) error {
-		return runLSTMStepBP(dt, true)
-	})
+	return runStepBPSpectrum("LSTM", buildLSTMStepBP)
 }
 
-func runLSTMStepBP(dtype core.DType, exact bool) error {
+func buildLSTMStepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
 	cfg := smokeLSTMCfg()
 	const batch = 2
 	lr := 1e-2
@@ -1183,12 +1311,12 @@ func runLSTMStepBP(dtype core.DType, exact bool) error {
 	}
 	l, err := lstm.NewConfigured(cfg, dtype, quant.FormatNone, W)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	disableLSTMTrainGates(l)
 	st, err := parallel.NewStack(l)
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	xin := core.NewTensor[float32](batch, cfg.SeqLen, cfg.InputSize)
 	copy(xin.Data, x)
@@ -1196,11 +1324,11 @@ func runLSTMStepBP(dtype core.DType, exact bool) error {
 	copy(target.Data, tgt)
 	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
 	if err != nil {
-		return fmt.Errorf("go: %w", err)
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
 	}
 	wa, err := packLSTMWeightsF32(st.Children[0].(*lstm.Layer))
 	if err != nil {
-		return err
+		return stepbpOut{}, nil, err
 	}
 	goO := stepbpOut{loss: loss, WAfter: [][]float32{wa}}
 	buf := encodeSTB1Header(1, 1, batch, lr)
@@ -1214,9 +1342,308 @@ func runLSTMStepBP(dtype core.DType, exact bool) error {
 	}
 	writeShapesTicks(buf, []int32{batch, int32(cfg.SeqLen), int32(cfg.InputSize)},
 		[]int32{batch, int32(cfg.SeqLen), int32(cfg.HiddenSize)}, [][]float32{x}, [][]float32{tgt})
-	cppO, _, err := runCppSTB1(buf.Bytes(), 0)
+	return goO, buf.Bytes(), nil
+}
+
+func runLSTMStepBP(dtype core.DType, exact bool) error {
+	goO, payload, err := buildLSTMStepBP(dtype)
+	if err != nil {
+		return err
+	}
+	cppO, _, err := runCppSTB1(payload, 0)
 	if err != nil {
 		return fmt.Errorf("cpp: %w", err)
 	}
 	return compareStepBP(goO, cppO, exact)
+}
+
+// --- Dense MeshBP (runtime/step clock + FamilyBP) ---
+
+type meshbpOut struct {
+	loss float64
+	Ws   [][]float32
+}
+
+func encodeDenseMBP1(depth, rows, cols, lpc, batch, ticks int, cells []volCell, x, target []float32, lr float64) ([]byte, error) {
+	var in bytes.Buffer
+	_, _ = in.Write([]byte("MBP1"))
+	for _, v := range []int32{int32(depth), int32(rows), int32(cols), int32(lpc), int32(batch), 0 /*cpu*/, 0 /*n_links*/, int32(ticks)} {
+		_ = binary.Write(&in, binary.LittleEndian, v)
+	}
+	if len(cells) != depth*rows*cols*lpc {
+		return nil, fmt.Errorf("cells len %d != stack %d", len(cells), depth*rows*cols*lpc)
+	}
+	for _, c := range cells {
+		en := int32(0)
+		if c.enabled {
+			en = 1
+		}
+		_ = binary.Write(&in, binary.LittleEndian, en)
+		if !c.enabled {
+			continue
+		}
+		_ = binary.Write(&in, binary.LittleEndian, int32(c.in))
+		_ = binary.Write(&in, binary.LittleEndian, int32(c.out))
+		_ = binary.Write(&in, binary.LittleEndian, int32(c.act))
+		_ = binary.Write(&in, binary.LittleEndian, int32(c.dtype))
+		for _, v := range c.W {
+			_ = binary.Write(&in, binary.LittleEndian, v)
+		}
+		_ = binary.Write(&in, binary.LittleEndian, uint32(len(c.bias)))
+		for _, v := range c.bias {
+			_ = binary.Write(&in, binary.LittleEndian, v)
+		}
+	}
+	for _, v := range x {
+		_ = binary.Write(&in, binary.LittleEndian, v)
+	}
+	for _, v := range target {
+		_ = binary.Write(&in, binary.LittleEndian, v)
+	}
+	_ = binary.Write(&in, binary.LittleEndian, lr)
+	return in.Bytes(), nil
+}
+
+func runCppMBP1(payload []byte, benchIters int) (meshbpOut, time.Duration, error) {
+	var z meshbpOut
+	var bench time.Duration
+	tool, err := findDenseFwd()
+	if err != nil {
+		return z, 0, err
+	}
+	args := []string{}
+	if benchIters > 0 {
+		args = append(args, fmt.Sprintf("--bench=%d", benchIters))
+	}
+	cmd := exec.Command(tool, args...)
+	cmd.Stdin = bytes.NewReader(payload)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return z, 0, fmt.Errorf("cpp mbp1: %v: %s", err, stderr.String())
+	}
+	raw := stdout.Bytes()
+	if len(raw) >= 4+8+4 && string(raw[:4]) == "WVB1" {
+		r := bytes.NewReader(raw[4:])
+		var ns int64
+		var iters int32
+		if err := binary.Read(r, binary.LittleEndian, &ns); err != nil {
+			return z, 0, err
+		}
+		if err := binary.Read(r, binary.LittleEndian, &iters); err != nil {
+			return z, 0, err
+		}
+		rest, err := io.ReadAll(r)
+		if err != nil {
+			return z, 0, err
+		}
+		raw = rest
+		bench = time.Duration(ns)
+	}
+	if len(raw) < 8 || string(raw[:4]) != "MBPO" {
+		return z, bench, fmt.Errorf("cpp meshbp bad magic")
+	}
+	r := bytes.NewReader(raw[4:])
+	if err := binary.Read(r, binary.LittleEndian, &z.loss); err != nil {
+		return z, bench, err
+	}
+	var nCells int32
+	if err := binary.Read(r, binary.LittleEndian, &nCells); err != nil {
+		return z, bench, err
+	}
+	for i := int32(0); i < nCells; i++ {
+		var o, inn int32
+		if err := binary.Read(r, binary.LittleEndian, &o); err != nil {
+			return z, bench, err
+		}
+		if err := binary.Read(r, binary.LittleEndian, &inn); err != nil {
+			return z, bench, err
+		}
+		w := make([]float32, o*inn)
+		for j := range w {
+			if err := binary.Read(r, binary.LittleEndian, &w[j]); err != nil {
+				return z, bench, err
+			}
+		}
+		z.Ws = append(z.Ws, w)
+	}
+	return z, bench, nil
+}
+
+func runGoDenseMeshBP(depth, rows, cols, lpc, batch, ticks int, cells []volCell, x, target []float32, lr float64) (meshbpOut, error) {
+	var z meshbpOut
+	g := architecture.NewGrid(depth, rows, cols, lpc)
+	g.Exec.MultiCore = false
+	hops := g.HopOrder()
+	if len(cells) != len(hops) {
+		return z, fmt.Errorf("cells %d != hops %d", len(cells), len(hops))
+	}
+	for i, c := range hops {
+		vc := cells[i]
+		if !vc.enabled {
+			cell := g.At(c.Z, c.Y, c.X, c.L)
+			if cell != nil {
+				cell.Layer.IsDisabled = true
+			}
+			continue
+		}
+		dl, err := dense.NewConfigured(vc.in, vc.out, vc.act, vc.dtype, quant.FormatNone, vc.W)
+		if err != nil {
+			return z, err
+		}
+		dl.Weights.Bias = append([]float64(nil), vc.bias...)
+		disableDense(dl)
+		if err := g.BindOp(c.Z, c.Y, c.X, c.L, core.Layer{
+			Type: core.LayerDense, DType: vc.dtype, Activation: vc.act,
+			InputHeight: vc.in, OutputHeight: vc.out,
+		}, dl); err != nil {
+			return z, err
+		}
+	}
+	xin := core.NewTensor[float32](batch, len(x)/batch)
+	copy(xin.Data, x)
+	tgt := core.NewTensor[float32](batch, len(target)/batch)
+	copy(tgt.Data, target)
+
+	st := step.New[float32](g)
+	for t := 0; t < ticks; t++ {
+		st.SetInput(xin)
+		if _, err := step.Forward(g, st, true); err != nil {
+			return z, fmt.Errorf("mesh fwd tick %d: %w", t, err)
+		}
+	}
+	if len(st.LayerData) == 0 || st.LayerData[len(st.LayerData)-1] == nil {
+		return z, fmt.Errorf("empty mesh output")
+	}
+	out := st.LayerData[len(st.LayerData)-1]
+	if out.Len() != tgt.Len() {
+		tgt = core.NewTensor[float32](out.Shape...)
+		copy(tgt.Data, target)
+	}
+	loss, err := training.MSE(out, tgt)
+	if err != nil {
+		return z, err
+	}
+	gy, err := training.MSEGrad(out, tgt)
+	if err != nil {
+		return z, err
+	}
+	_, grads, err := step.Backward(g, st, gy)
+	if err != nil {
+		return z, err
+	}
+	for i, pair := range grads {
+		if pair[1] == nil {
+			continue
+		}
+		cell := &g.Cells[i]
+		dl, ok := cell.Op.(*dense.Layer)
+		if !ok {
+			return z, fmt.Errorf("expected dense at idx %d", i)
+		}
+		if err := dense.ApplyGradSGD(dl, pair[1], lr); err != nil {
+			return z, err
+		}
+	}
+	z.loss = loss
+	for i, c := range hops {
+		if !cells[i].enabled {
+			continue
+		}
+		cell := g.At(c.Z, c.Y, c.X, c.L)
+		dl, ok := cell.Op.(*dense.Layer)
+		if !ok {
+			return z, fmt.Errorf("expected dense at %v", c)
+		}
+		Wa, err := weights.MatrixF32(dl.Weights)
+		if err != nil {
+			return z, err
+		}
+		z.Ws = append(z.Ws, append([]float32(nil), Wa...))
+	}
+	return z, nil
+}
+
+func compareMeshBP(goO, cppO meshbpOut, requireExact bool) error {
+	if len(goO.Ws) != len(cppO.Ws) {
+		return fmt.Errorf("n_cells go=%d cpp=%d", len(goO.Ws), len(cppO.Ws))
+	}
+	for i := range goO.Ws {
+		m := suites.CompareF32Spectrum(goO.Ws[i], cppO.Ws[i])
+		if requireExact && m.Band != suites.DetExactBit {
+			return fmt.Errorf("W[%d]: %s", i, suites.FormatSpectrum(m))
+		}
+	}
+	if goO.loss != cppO.loss {
+		rel := math.Abs(goO.loss-cppO.loss) / math.Max(1e-30, math.Abs(goO.loss))
+		if requireExact && rel > 0 {
+			return fmt.Errorf("loss go=%g cpp=%g", goO.loss, cppO.loss)
+		}
+	}
+	return nil
+}
+
+func runDenseMeshBPCase(depth, rows, cols, lpc, batch, ticks, benchIters int) error {
+	stack := depth * rows * cols * lpc
+	dim := 4
+	W, x, bias := makeSharedInit(dim, dim, batch)
+	for i := range W {
+		W[i] *= 0.05
+	}
+	for i := range x {
+		x[i] *= 0.05
+	}
+	target := make([]float32, dim*batch)
+	for i := range target {
+		target[i] = float32(0.05 * float64(i%dim+1))
+	}
+	cells := make([]volCell, stack)
+	for i := range cells {
+		cells[i] = volCell{
+			enabled: true, in: dim, out: dim, act: core.ActivationLinear,
+			dtype: core.DTypeFloat32, W: append([]float32(nil), W...), bias: append([]float64(nil), bias...),
+		}
+	}
+	goO, err := runGoDenseMeshBP(depth, rows, cols, lpc, batch, ticks, cells, x, target, 1e-2)
+	if err != nil {
+		return fmt.Errorf("go: %w", err)
+	}
+	payload, err := encodeDenseMBP1(depth, rows, cols, lpc, batch, ticks, cells, x, target, 1e-2)
+	if err != nil {
+		return err
+	}
+	_, cppDur, err := runCppMBP1(payload, benchIters)
+	if err != nil {
+		return fmt.Errorf("cpp: %w", err)
+	}
+	cppO, _, err := runCppMBP1(payload, 0)
+	if err != nil {
+		return fmt.Errorf("cpp2: %w", err)
+	}
+	if err := compareMeshBP(goO, cppO, true); err != nil {
+		return err
+	}
+	t0 := time.Now()
+	_, _ = runGoDenseMeshBP(depth, rows, cols, lpc, batch, ticks, cells, x, target, 1e-2)
+	goUS := float64(time.Since(t0).Nanoseconds()) / 1000
+	bi := benchIters
+	if bi < 1 {
+		bi = 1
+	}
+	cppUS := float64(cppDur.Nanoseconds()) / float64(bi) / 1000
+	spd := suites.SpeedPctDiff(goUS, cppUS)
+	fmt.Printf("\n      MeshBP %dx%dx%dx%d ticks=%d loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
+		depth, rows, cols, lpc, ticks, goO.loss, goUS, cppUS, spd)
+	return nil
+}
+
+func caseDenseMeshBP111F32() error {
+	return runDenseMeshBPCase(1, 1, 1, 1, 1, 1, 40)
+}
+func caseDenseMeshBP211F32() error {
+	return runDenseMeshBPCase(2, 1, 1, 1, 1, 2, 40)
+}
+func caseDenseMeshBP222F32() error {
+	return runDenseMeshBPCase(2, 2, 2, 1, 1, 8, 20)
 }

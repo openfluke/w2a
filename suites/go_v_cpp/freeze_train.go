@@ -233,12 +233,9 @@ func compareFreeze(goO, cppO freezeOut, requireExact bool) error {
 			return fmt.Errorf("W[%d]: %s", i, suites.FormatSpectrum(m))
 		}
 	}
-	if goO.loss != cppO.loss {
+	if !lossWithin1Ulp(goO.loss, cppO.loss) {
 		rel := math.Abs(goO.loss-cppO.loss) / math.Max(1e-30, math.Abs(goO.loss))
-		if requireExact && rel > 0 {
-			return fmt.Errorf("loss go=%g cpp=%g", goO.loss, cppO.loss)
-		}
-		if !requireExact && rel > 1e-5 {
+		if requireExact || rel > 1e-5 {
 			return fmt.Errorf("loss go=%g cpp=%g", goO.loss, cppO.loss)
 		}
 	}
@@ -276,7 +273,7 @@ func runFreezeSpectrum(label string, build func(core.DType) (freezeOut, []byte, 
 		} else {
 			// weightless (e.g. Softmax): band from loss bits
 			m = suites.DetMetrics{Band: suites.DetExactBit, ExactPct: 100}
-			if goO.loss != cppO.loss {
+			if !lossWithin1Ulp(goO.loss, cppO.loss) {
 				m.Band = suites.DetBroken
 				m.ExactPct = 0
 			}

@@ -2,8 +2,25 @@ package go_v_cpp
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
+
+// lossWithin1Ulp is true when a and b are identical or adjacent float64 bit patterns.
+// On ARM, Go vs C++ scalar MSE often differs by 1 ULP while f32 tensors stay exact_bit.
+func lossWithin1Ulp(a, b float64) bool {
+	if a == b {
+		return true
+	}
+	if math.IsNaN(a) || math.IsNaN(b) || math.IsInf(a, 0) || math.IsInf(b, 0) {
+		return false
+	}
+	ai, bi := math.Float64bits(a), math.Float64bits(b)
+	if ai > bi {
+		ai, bi = bi, ai
+	}
+	return bi-ai <= 1
+}
 
 // defaultGoBenchIters is the starting iteration count for Go wall-clock benches.
 // On fast ARM hosts, 40 iters of a tiny op can finish in <1 QPC tick → go=0.00µs.

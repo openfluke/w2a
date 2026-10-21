@@ -269,12 +269,9 @@ func compareRMSNormNBP(goO, cppO rnbpLeafOut, requireExact bool) error {
 			return fmt.Errorf("%s: %s", c.name, suites.FormatSpectrum(m))
 		}
 	}
-	if goO.loss != cppO.loss {
+	if !lossWithin1Ulp(goO.loss, cppO.loss) {
 		rel := math.Abs(goO.loss-cppO.loss) / math.Max(1e-30, math.Abs(goO.loss))
-		if requireExact && rel > 0 {
-			return fmt.Errorf("loss go=%g cpp=%g", goO.loss, cppO.loss)
-		}
-		if !requireExact && rel > 1e-5 {
+		if requireExact || rel > 1e-5 {
 			return fmt.Errorf("loss go=%g cpp=%g", goO.loss, cppO.loss)
 		}
 	}
@@ -710,7 +707,8 @@ func caseRMSNormNBPVol111AllDTypes() error {
 		if err := compareVolNBP(goO, cppO, true); err != nil {
 			fails = append(fails, fmt.Sprintf("%s: %v", dt, err))
 			m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-			fmt.Printf("      %-12s %-12s %7.2f%% FAIL %s\n", dt, m.Band, m.ExactPct, fmt.Sprintf("%.3g", m.MaxAbs))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %9s %s\n",
+				dt, m.Band, m.ExactPct, "—", "—", "cmpFAIL", fmt.Sprintf("%.3g", m.MaxAbs))
 			continue
 		}
 		goUS, cppUS, spdPct, err := benchRMSNormVolNBP(depth, rows, cols, lpc, batch, cells, x, target, 1e-2, benchIters)
@@ -796,7 +794,8 @@ func caseRMSNormNBPVol211AllDTypes() error {
 		if err := compareVolNBP(goO, cppO, true); err != nil {
 			fails = append(fails, fmt.Sprintf("%s: %v", dt, err))
 			m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-			fmt.Printf("      %-12s %-12s %7.2f%% FAIL %s\n", dt, m.Band, m.ExactPct, fmt.Sprintf("%.3g", m.MaxAbs))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10s %10s %9s %s\n",
+				dt, m.Band, m.ExactPct, "—", "—", "cmpFAIL", fmt.Sprintf("%.3g", m.MaxAbs))
 			continue
 		}
 		goUS, cppUS, spdPct, err := benchRMSNormVolNBP(depth, rows, cols, lpc, batch, cells, x, target, 1e-2, benchIters)

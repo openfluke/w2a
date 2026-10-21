@@ -68,7 +68,8 @@ func Cases() []Case {
 	out = append(out, CasesRMSNormTrain()...)
 	out = append(out, CasesLayerNormTrain()...)
 	out = append(out, CasesSwiGLUTrain()...)
-	return append(out, CasesSoftmaxTrain()...)
+	out = append(out, CasesSoftmaxTrain()...)
+	return append(out, CasesEmbeddingTrain()...)
 }
 
 func RunAll() error {

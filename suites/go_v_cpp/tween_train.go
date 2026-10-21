@@ -68,6 +68,23 @@ func CasesTweenTrain() []Case {
 		{Name: "Dense Tween volume 1×1×1×1 Float32 — exact bits", Run: caseDenseTweenVol111F32},
 		{Name: "Dense Tween volume 2×1×1×1 chain Float32 — exact bits", Run: caseDenseTweenVol211F32},
 		{Name: "Dense Tween volume 2×2×2×1 Float32 — exact bits", Run: caseDenseTweenVol222F32},
+		{Name: "RMSNorm Tween volume 2×2×2×1 Float32 — exact bits", Run: caseRMSNormTweenVol222F32},
+		{Name: "LayerNorm Tween volume 2×2×2×1 Float32 — exact bits", Run: caseLayerNormTweenVol222F32},
+		{Name: "Softmax Tween volume 2×2×2×1 Float32 — exact bits", Run: caseSoftmaxTweenVol222F32},
+		{Name: "SwiGLU Tween volume 2×2×2×1 Float32 — exact bits", Run: caseSwiGLUTweenVol222F32},
+		{Name: "Sequential Tween volume 2×2×2×1 Float32 — exact bits", Run: caseSeqTweenVol222F32},
+		{Name: "Residual Tween volume 2×2×2×1 Float32 — exact bits", Run: caseReTweenVol222F32},
+		{Name: "Mamba Tween volume 2×2×2×1 Float32 — exact bits", Run: caseMbTweenVol222F32},
+		{Name: "Embedding Tween volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingTweenVol222F32},
+		{Name: "MHA Tween volume 2×2×2×1 Float32 — exact bits", Run: caseMHATweenVol222F32},
+		{Name: "CNN1 Tween volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNTweenVol222F32(1) }},
+		{Name: "CNN2 Tween volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNTweenVol222F32(2) }},
+		{Name: "CNN3 Tween volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNTweenVol222F32(3) }},
+		{Name: "ConvT1 Tween volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseConvTTweenVol222F32(1) }},
+		{Name: "ConvT2 Tween volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseConvTTweenVol222F32(2) }},
+		{Name: "ConvT3 Tween volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseConvTTweenVol222F32(3) }},
+		{Name: "RNN Tween volume 2×2×2×1 Float32 — exact bits", Run: caseRNNTweenVol222F32},
+		{Name: "LSTM Tween volume 2×2×2×1 Float32 — exact bits", Run: caseLSTMTweenVol222F32},
 	}
 }
 

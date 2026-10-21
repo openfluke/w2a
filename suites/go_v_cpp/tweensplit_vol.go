@@ -100,7 +100,7 @@ func applyModeTweenSplitVolume(g *architecture.Grid, fwd *forward.Result[float32
 		}
 		proj := projectGapF32(gy, lf.post.Shape...)
 		for j := range proj.Data {
-			proj.Data[j] *= float32(scale)
+			proj.Data[j] = float32(float64(proj.Data[j]) * scale)
 		}
 		if err := applyTweenLocalOp(lf.op, proj, lf.in, lf.pre, lr); err != nil {
 			return loss, err

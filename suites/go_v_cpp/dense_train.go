@@ -204,20 +204,30 @@ func decodeDenseNBP(raw []byte) (nbpLeafOut, time.Duration, error) {
 }
 
 func runCppDenseNBP(fc nbpLeaf) (nbpLeafOut, error) {
+	out, _, err := runCppDenseNBPBench(fc, 0)
+	return out, err
+}
+
+// runCppDenseNBPBench runs WDB1; benchIters>0 → in-process --bench (WVB1 ns), excluding spawn.
+func runCppDenseNBPBench(fc nbpLeaf, benchIters int) (nbpLeafOut, time.Duration, error) {
 	tool, err := findDenseFwd()
 	if err != nil {
-		return nbpLeafOut{}, err
+		return nbpLeafOut{}, 0, err
 	}
-	cmd := exec.Command(tool)
+	var cmd *exec.Cmd
+	if benchIters > 0 {
+		cmd = exec.Command(tool, fmt.Sprintf("--bench=%d", benchIters))
+	} else {
+		cmd = exec.Command(tool)
+	}
 	cmd.Stdin = bytes.NewReader(encodeDenseNBP(fc))
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nbpLeafOut{}, fmt.Errorf("cpp dense nbp: %v: %s", err, stderr.String())
+		return nbpLeafOut{}, 0, fmt.Errorf("cpp dense nbp: %v: %s", err, stderr.String())
 	}
-	out, _, err := decodeDenseNBP(stdout.Bytes())
-	return out, err
+	return decodeDenseNBP(stdout.Bytes())
 }
 
 func compareNBP(goO, cppO nbpLeafOut, requireExact bool) error {
@@ -253,6 +263,7 @@ func compareNBP(goO, cppO nbpLeafOut, requireExact bool) error {
 }
 
 func caseDenseNBPLeafF32() error {
+	const benchIters = 40
 	fc := nbpLeaf{
 		batch: 2, in: 4, out: 3,
 		act:    core.ActivationReLU,
@@ -274,18 +285,39 @@ func caseDenseNBPLeafF32() error {
 	if err := compareNBP(goO, cppO, true); err != nil {
 		return err
 	}
-	fmt.Printf("\n      loss=%.6g exact_bit dX/dW/W", goO.loss)
+	for i := 0; i < 3; i++ {
+		if _, err := runGoDenseNBP(fc); err != nil {
+			return err
+		}
+	}
+	t0 := time.Now()
+	for i := 0; i < benchIters; i++ {
+		if _, err := runGoDenseNBP(fc); err != nil {
+			return err
+		}
+	}
+	goDur := time.Since(t0)
+	_, cppDur, err := runCppDenseNBPBench(fc, benchIters)
+	if err != nil {
+		return fmt.Errorf("cpp bench: %w", err)
+	}
+	goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	spdPct := suites.SpeedPctDiff(goUS, cppUS)
+	fmt.Printf("\n      loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%  (neg ⇒ C++ faster)",
+		goO.loss, goUS, cppUS, spdPct)
 	return nil
 }
 
 func caseDenseNBPLeafAllDTypes() error {
-	const in, out, batch = 8, 4, 2
+	const in, out, batch, benchIters = 8, 4, 2, 40
 	W, x, bias := makeSharedInit(out, in, batch)
 	target := make([]float32, batch*out)
 	for i := range target {
 		target[i] = float32(0.1*float64(i+1) + 0.05)
 	}
-	fmt.Printf("\n      %-12s %-12s %8s %8s %9s %s\n", "dtype", "band", "exact%W", "goµs", "cppµs", "max|Δ|W")
+	fmt.Printf("\n      %-12s %-12s %8s %10s %10s %9s %s\n",
+		"dtype", "band", "exact%W", "goµs", "cppµs", "spd%Δ", "max|Δ|W")
 	var fails []string
 	worst := suites.DetExactBit
 	for _, dt := range core.AllDTypes {
@@ -301,15 +333,7 @@ func caseDenseNBPLeafAllDTypes() error {
 			fails = append(fails, fmt.Sprintf("%s go: %v", dt, err))
 			continue
 		}
-		t0 := time.Now()
-		if _, err := runGoDenseNBP(fc); err != nil {
-			fails = append(fails, fmt.Sprintf("%s go2: %v", dt, err))
-			continue
-		}
-		goDur := time.Since(t0)
-		t1 := time.Now()
 		cppO, err := runCppDenseNBP(fc)
-		cppDur := time.Since(t1)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s cpp: %v", dt, err))
 			continue
@@ -326,15 +350,38 @@ func caseDenseNBPLeafAllDTypes() error {
 		if band.Percent() < worst.Percent() {
 			worst = band
 		}
-		fmt.Printf("      %-12s %-12s %7.2f%% %8.2f %8.2f %s\n",
-			dt, band, mW.ExactPct,
-			float64(goDur.Nanoseconds())/1000, float64(cppDur.Nanoseconds())/1000,
-			fmt.Sprintf("%.3g", mW.MaxAbs))
+		for i := 0; i < 3; i++ {
+			if _, err := runGoDenseNBP(fc); err != nil {
+				fails = append(fails, fmt.Sprintf("%s go warm: %v", dt, err))
+				break
+			}
+		}
+		t0 := time.Now()
+		for i := 0; i < benchIters; i++ {
+			if _, err := runGoDenseNBP(fc); err != nil {
+				fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
+				break
+			}
+		}
+		goDur := time.Since(t0)
+		_, cppDur, err := runCppDenseNBPBench(fc, benchIters)
+		goUS := float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cpp bench: %v", dt, err))
+			fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10s %9s %s\n",
+				dt, band, mW.ExactPct, goUS, "?", "?", fmt.Sprintf("%.3g", mW.MaxAbs))
+			continue
+		}
+		cppUS := float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+		spdPct := suites.SpeedPctDiff(goUS, cppUS)
+		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
+			dt, band, mW.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", mW.MaxAbs))
 		if band != suites.DetExactBit {
 			fails = append(fails, fmt.Sprintf("%s: %s", dt, band))
 		}
 	}
 	fmt.Printf("      worst_band=%s — want exact_bit on all 34\n", worst)
+	fmt.Printf("      spd%%Δ = (cpp−go)/go×100  (negative ⇒ C++ faster); cpp via --bench=N (no spawn)\n")
 	if len(fails) > 0 {
 		return fmt.Errorf("%d dtype issues: %s", len(fails), strings.Join(fails, " | "))
 	}
@@ -463,76 +510,127 @@ func encodeVolNBP(depth, rows, cols, lpc, batch int, cells []volCell, x, target 
 	return in.Bytes(), nil
 }
 
-func decodeVolNBP(raw []byte) (nbpVolOut, error) {
+func decodeVolNBP(raw []byte) (nbpVolOut, time.Duration, error) {
 	var z nbpVolOut
+	var bench time.Duration
+	if len(raw) >= 4+8+4 && string(raw[:4]) == "WVB1" {
+		r := bytes.NewReader(raw[4:])
+		var ns int64
+		var iters int32
+		if err := binary.Read(r, binary.LittleEndian, &ns); err != nil {
+			return z, 0, err
+		}
+		if err := binary.Read(r, binary.LittleEndian, &iters); err != nil {
+			return z, 0, err
+		}
+		rest, err := io.ReadAll(r)
+		if err != nil {
+			return z, 0, err
+		}
+		raw = rest
+		bench = time.Duration(ns)
+	}
 	if len(raw) < 8 || string(raw[:4]) != "WVNO" {
-		return z, fmt.Errorf("cpp vol nbp bad magic")
+		return z, bench, fmt.Errorf("cpp vol nbp bad magic")
 	}
 	r := bytes.NewReader(raw[4:])
 	if err := binary.Read(r, binary.LittleEndian, &z.loss); err != nil {
-		return z, err
+		return z, bench, err
 	}
 	var ginN int32
 	if err := binary.Read(r, binary.LittleEndian, &ginN); err != nil {
-		return z, err
+		return z, bench, err
 	}
 	z.gradIn = make([]float32, ginN)
 	for i := range z.gradIn {
 		if err := binary.Read(r, binary.LittleEndian, &z.gradIn[i]); err != nil {
-			return z, err
+			return z, bench, err
 		}
 	}
 	var nCells int32
 	if err := binary.Read(r, binary.LittleEndian, &nCells); err != nil {
-		return z, err
+		return z, bench, err
 	}
 	for i := int32(0); i < nCells; i++ {
 		var o, inn int32
 		if err := binary.Read(r, binary.LittleEndian, &o); err != nil {
-			return z, err
+			return z, bench, err
 		}
 		if err := binary.Read(r, binary.LittleEndian, &inn); err != nil {
-			return z, err
+			return z, bench, err
 		}
 		w := make([]float32, o*inn)
 		for j := range w {
 			if err := binary.Read(r, binary.LittleEndian, &w[j]); err != nil {
-				return z, err
+				return z, bench, err
 			}
 		}
 		z.Ws = append(z.Ws, w)
 	}
 	var outN int32
 	if err := binary.Read(r, binary.LittleEndian, &outN); err != nil {
-		return z, err
+		return z, bench, err
 	}
 	z.post = make([]float32, outN)
 	for i := range z.post {
 		if err := binary.Read(r, binary.LittleEndian, &z.post[i]); err != nil {
-			return z, err
+			return z, bench, err
 		}
 	}
-	return z, nil
+	return z, bench, nil
 }
 
 func runCppVolNBP(depth, rows, cols, lpc, batch int, cells []volCell, x, target []float32, lr float64) (nbpVolOut, error) {
+	out, _, err := runCppVolNBPBench(depth, rows, cols, lpc, batch, cells, x, target, lr, 0)
+	return out, err
+}
+
+func runCppVolNBPBench(depth, rows, cols, lpc, batch int, cells []volCell, x, target []float32, lr float64, benchIters int) (nbpVolOut, time.Duration, error) {
 	tool, err := findDenseFwd()
 	if err != nil {
-		return nbpVolOut{}, err
+		return nbpVolOut{}, 0, err
 	}
 	payload, err := encodeVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr)
 	if err != nil {
-		return nbpVolOut{}, err
+		return nbpVolOut{}, 0, err
 	}
-	cmd := exec.Command(tool)
+	var cmd *exec.Cmd
+	if benchIters > 0 {
+		cmd = exec.Command(tool, fmt.Sprintf("--bench=%d", benchIters))
+	} else {
+		cmd = exec.Command(tool)
+	}
 	cmd.Stdin = bytes.NewReader(payload)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nbpVolOut{}, fmt.Errorf("cpp vol nbp: %v: %s", err, stderr.String())
+		return nbpVolOut{}, 0, fmt.Errorf("cpp vol nbp: %v: %s", err, stderr.String())
 	}
 	return decodeVolNBP(stdout.Bytes())
+}
+
+func benchVolNBP(depth, rows, cols, lpc, batch int, cells []volCell, x, target []float32, lr float64, benchIters int) (goUS, cppUS, spdPct float64, err error) {
+	for i := 0; i < 3; i++ {
+		if _, err := runGoVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
+			return 0, 0, 0, err
+		}
+	}
+	t0 := time.Now()
+	for i := 0; i < benchIters; i++ {
+		if _, err := runGoVolNBP(depth, rows, cols, lpc, batch, cells, x, target, lr); err != nil {
+			return 0, 0, 0, err
+		}
+	}
+	goDur := time.Since(t0)
+	_, cppDur, err := runCppVolNBPBench(depth, rows, cols, lpc, batch, cells, x, target, lr, benchIters)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	goUS = float64(goDur.Nanoseconds()) / float64(benchIters) / 1000
+	cppUS = float64(cppDur.Nanoseconds()) / float64(benchIters) / 1000
+	spdPct = suites.SpeedPctDiff(goUS, cppUS)
+	return goUS, cppUS, spdPct, nil
 }
 
 func compareVolNBP(goO, cppO nbpVolOut, requireExact bool) error {
@@ -565,7 +663,7 @@ func compareVolNBP(goO, cppO nbpVolOut, requireExact bool) error {
 }
 
 func caseDenseNBPVol1x1x1() error {
-	const batch, dim = 2, 4
+	const batch, dim, benchIters = 2, 4, 40
 	W := []float32{
 		0.2, -0.1, 0.05, 0.3,
 		-0.15, 0.25, 0.1, -0.05,
@@ -590,12 +688,17 @@ func caseDenseNBPVol1x1x1() error {
 	if err := compareVolNBP(goO, cppO, true); err != nil {
 		return err
 	}
-	fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit", goO.loss)
+	goUS, cppUS, spdPct, err := benchVolNBP(1, 1, 1, 1, batch, cells, x, target, lr, benchIters)
+	if err != nil {
+		return fmt.Errorf("bench: %w", err)
+	}
+	fmt.Printf("\n      1×1×1×1 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
+		goO.loss, goUS, cppUS, spdPct)
 	return nil
 }
 
 func caseDenseNBPVolChain() error {
-	const batch = 1
+	const batch, benchIters = 1, 40
 	W0 := []float32{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0}
 	W1 := []float32{1, 0, 0, 0, 1, 0}
 	cells := []volCell{
@@ -616,18 +719,24 @@ func caseDenseNBPVolChain() error {
 	if err := compareVolNBP(goO, cppO, true); err != nil {
 		return err
 	}
-	fmt.Printf("\n      1×1×1×2 chain loss=%.6g exact_bit", goO.loss)
+	goUS, cppUS, spdPct, err := benchVolNBP(1, 1, 1, 2, batch, cells, x, target, lr, benchIters)
+	if err != nil {
+		return fmt.Errorf("bench: %w", err)
+	}
+	fmt.Printf("\n      1×1×1×2 chain loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
+		goO.loss, goUS, cppUS, spdPct)
 	return nil
 }
 
 func caseDenseNBPVol111AllDTypes() error {
-	const depth, rows, cols, lpc, batch, dim = 1, 1, 1, 1, 1, 4
+	const depth, rows, cols, lpc, batch, dim, benchIters = 1, 1, 1, 1, 1, 4, 40
 	W, x, bias := makeSharedInit(dim, dim, batch)
 	target := make([]float32, dim)
 	for i := range target {
 		target[i] = float32(0.05 * float64(i+1))
 	}
-	fmt.Printf("\n      %-12s %-12s %8s %s\n", "dtype", "band", "exact%", "max|Δ|")
+	fmt.Printf("\n      %-12s %-12s %8s %10s %10s %9s %s\n",
+		"dtype", "band", "exact%", "goµs", "cppµs", "spd%Δ", "max|Δ|")
 	var fails []string
 	for _, dt := range core.AllDTypes {
 		cells := []volCell{{
@@ -647,12 +756,19 @@ func caseDenseNBPVol111AllDTypes() error {
 		if err := compareVolNBP(goO, cppO, true); err != nil {
 			fails = append(fails, fmt.Sprintf("%s: %v", dt, err))
 			m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-			fmt.Printf("      %-12s %-12s %7.2f%% %s FAIL\n", dt, m.Band, m.ExactPct, fmt.Sprintf("%.3g", m.MaxAbs))
+			fmt.Printf("      %-12s %-12s %7.2f%% FAIL %s\n", dt, m.Band, m.ExactPct, fmt.Sprintf("%.3g", m.MaxAbs))
+			continue
+		}
+		goUS, cppUS, spdPct, err := benchVolNBP(depth, rows, cols, lpc, batch, cells, x, target, 1e-2, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s bench: %v", dt, err))
 			continue
 		}
 		m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-		fmt.Printf("      %-12s %-12s %7.2f%% %s\n", dt, m.Band, m.ExactPct, fmt.Sprintf("%.3g", m.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
+			dt, m.Band, m.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 	}
+	fmt.Printf("      spd%%Δ = (cpp−go)/go×100  (negative ⇒ C++ faster)\n")
 	if len(fails) > 0 {
 		return fmt.Errorf("%d vol111 dtype issues: %s", len(fails), strings.Join(fails, " | "))
 	}
@@ -660,7 +776,7 @@ func caseDenseNBPVol111AllDTypes() error {
 }
 
 func caseDenseNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, dim = 2, 2, 2, 1, 1, 4
+	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 2, 2, 1, 1, 4, 40
 	stack := depth * rows * cols * lpc
 	W, x, bias := makeSharedInit(dim, dim, batch)
 	for i := range W {
@@ -691,13 +807,18 @@ func caseDenseNBPVol222F32() error {
 	if err := compareVolNBP(goO, cppO, true); err != nil {
 		return err
 	}
-	fmt.Printf("\n      2×2×2×1 Float32 loss=%.6g exact_bit", goO.loss)
+	goUS, cppUS, spdPct, err := benchVolNBP(depth, rows, cols, lpc, batch, cells, x, target, 1e-2, benchIters)
+	if err != nil {
+		return fmt.Errorf("bench: %w", err)
+	}
+	fmt.Printf("\n      2×2×2×1 Float32 loss=%.6g exact_bit  go=%.2fµs  cpp=%.2fµs  spd%%Δ=%+.1f%%",
+		goO.loss, goUS, cppUS, spdPct)
 	return nil
 }
 
 // 2×1×1×1 = two-cell depth chain (true multi-cell volume) without 8-hop blow-up on low-bit signed.
 func caseDenseNBPVol211AllDTypes() error {
-	const depth, rows, cols, lpc, batch, dim = 2, 1, 1, 1, 1, 4
+	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 1, 1, 1, 1, 4, 40
 	stack := depth * rows * cols * lpc
 	W, x, bias := makeSharedInit(dim, dim, batch)
 	// Scale down init for multi-hop low-bit stability (still FormatNone×34).
@@ -711,7 +832,8 @@ func caseDenseNBPVol211AllDTypes() error {
 	for i := range target {
 		target[i] = float32(0.05 * float64(i+1))
 	}
-	fmt.Printf("\n      %-12s %-12s %8s %s\n", "dtype", "band", "exact%", "max|Δ|")
+	fmt.Printf("\n      %-12s %-12s %8s %10s %10s %9s %s\n",
+		"dtype", "band", "exact%", "goµs", "cppµs", "spd%Δ", "max|Δ|")
 	var fails []string
 	for _, dt := range core.AllDTypes {
 		cells := make([]volCell, stack)
@@ -734,12 +856,19 @@ func caseDenseNBPVol211AllDTypes() error {
 		if err := compareVolNBP(goO, cppO, true); err != nil {
 			fails = append(fails, fmt.Sprintf("%s: %v", dt, err))
 			m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-			fmt.Printf("      %-12s %-12s %7.2f%% %s FAIL\n", dt, m.Band, m.ExactPct, fmt.Sprintf("%.3g", m.MaxAbs))
+			fmt.Printf("      %-12s %-12s %7.2f%% FAIL %s\n", dt, m.Band, m.ExactPct, fmt.Sprintf("%.3g", m.MaxAbs))
+			continue
+		}
+		goUS, cppUS, spdPct, err := benchVolNBP(depth, rows, cols, lpc, batch, cells, x, target, 1e-2, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s bench: %v", dt, err))
 			continue
 		}
 		m := suites.CompareF32Spectrum(goO.Ws[0], cppO.Ws[0])
-		fmt.Printf("      %-12s %-12s %7.2f%% %s\n", dt, m.Band, m.ExactPct, fmt.Sprintf("%.3g", m.MaxAbs))
+		fmt.Printf("      %-12s %-12s %7.2f%% %10.2f %10.2f %+8.1f%% %s\n",
+			dt, m.Band, m.ExactPct, goUS, cppUS, spdPct, fmt.Sprintf("%.3g", m.MaxAbs))
 	}
+	fmt.Printf("      spd%%Δ = (cpp−go)/go×100  (negative ⇒ C++ faster)\n")
 	if len(fails) > 0 {
 		return fmt.Errorf("%d vol211 dtype issues: %s", len(fails), strings.Join(fails, " | "))
 	}

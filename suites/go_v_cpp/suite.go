@@ -72,7 +72,9 @@ func Cases() []Case {
 	out = append(out, CasesEmbeddingTrain()...)
 	out = append(out, CasesMHATrain()...)
 	out = append(out, CasesCNNTrain()...)
-	return append(out, CasesConvTTrain()...)
+	out = append(out, CasesConvTTrain()...)
+	out = append(out, CasesRNNTrain()...)
+	return append(out, CasesLSTMTrain()...)
 }
 
 func RunAll() error {

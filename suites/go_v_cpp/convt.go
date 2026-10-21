@@ -49,6 +49,30 @@ func RunConvT() error {
 	return nil
 }
 
+func disableConvT1(l *convt1.Layer) {
+	l.Exec.Backend = core.BackendCPUTiled
+	l.Exec.MultiCore = false
+	l.Core.MultiCore = false
+	l.Proj.Exec.MultiCore = false
+	l.Proj.Core.MultiCore = false
+}
+
+func disableConvT2(l *convt2.Layer) {
+	l.Exec.Backend = core.BackendCPUTiled
+	l.Exec.MultiCore = false
+	l.Core.MultiCore = false
+	l.Proj.Exec.MultiCore = false
+	l.Proj.Core.MultiCore = false
+}
+
+func disableConvT3(l *convt3.Layer) {
+	l.Exec.Backend = core.BackendCPUTiled
+	l.Exec.MultiCore = false
+	l.Core.MultiCore = false
+	l.Proj.Exec.MultiCore = false
+	l.Proj.Core.MultiCore = false
+}
+
 type convt1Case struct {
 	batch   int
 	cfg     convt1.Config
@@ -83,10 +107,7 @@ func runGoConvT1(fc convt1Case) (pre, post []float32, err error) {
 		return nil, nil, err
 	}
 	l.Exec.Backend = fc.backend
-	l.Exec.MultiCore = false
-	l.Core.MultiCore = false
-	l.Proj.Exec.MultiCore = false
-	l.Proj.Core.MultiCore = false
+	disableConvT1(l)
 	t := core.NewTensor[float32](fc.batch, cfg.InChannels, cfg.SeqLen)
 	copy(t.Data, fc.x)
 	preT, postT, err := convt1.Forward(l, t)
@@ -106,10 +127,7 @@ func runGoConvT2(fc convt2Case) (pre, post []float32, err error) {
 		return nil, nil, err
 	}
 	l.Exec.Backend = fc.backend
-	l.Exec.MultiCore = false
-	l.Core.MultiCore = false
-	l.Proj.Exec.MultiCore = false
-	l.Proj.Core.MultiCore = false
+	disableConvT2(l)
 	t := core.NewTensor[float32](fc.batch, cfg.InChannels, cfg.Height, cfg.Width)
 	copy(t.Data, fc.x)
 	preT, postT, err := convt2.Forward(l, t)
@@ -129,10 +147,7 @@ func runGoConvT3(fc convt3Case) (pre, post []float32, err error) {
 		return nil, nil, err
 	}
 	l.Exec.Backend = fc.backend
-	l.Exec.MultiCore = false
-	l.Core.MultiCore = false
-	l.Proj.Exec.MultiCore = false
-	l.Proj.Core.MultiCore = false
+	disableConvT3(l)
 	t := core.NewTensor[float32](fc.batch, cfg.InChannels, cfg.Depth, cfg.Height, cfg.Width)
 	copy(t.Data, fc.x)
 	preT, postT, err := convt3.Forward(l, t)

@@ -10,6 +10,7 @@ import (
 	"github.com/openfluke/w2a/suites"
 	denssuite "github.com/openfluke/w2a/suites/dense"
 	govcpp "github.com/openfluke/w2a/suites/go_v_cpp"
+	govqnn "github.com/openfluke/w2a/suites/go_v_qnn"
 	dnasuite "github.com/openfluke/w2a/suites/dna"
 	weightssuite "github.com/openfluke/w2a/suites/weights"
 	mhasuite "github.com/openfluke/w2a/suites/mha"
@@ -60,6 +61,12 @@ func main() {
 			Desc: "exact 1:1 Go Welvet vs welvet.cpp (+ speed) — needs ../welvet.cpp/build",
 			Run:  govcpp.RunAll,
 			Menu: goVCppSubmenu,
+		},
+		{
+			Name: "Go_v_QNN",
+			Desc: "Go vs nativecpp vs Hexagon QNN timing — QNN-capable layers only (windows/arm64)",
+			Run:  govqnn.RunAll,
+			Menu: goVQnnSubmenu,
 		},
 		{
 			Name: "Dense",
@@ -363,6 +370,55 @@ func goVCppSubmenu() {
 		fmt.Println()
 		_ = withSuiteLog(func() error {
 			if err := govcpp.RunOne(n); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return err
+			}
+			return nil
+		})
+	}
+}
+
+func goVQnnSubmenu() {
+	in := bufio.NewReader(os.Stdin)
+	cases := govqnn.Cases()
+	for {
+		fmt.Println()
+		fmt.Println("Go_v_QNN suite — Go / native / Hexagon HTP (QNN-capable layers only)")
+		fmt.Println("  [0] Run ALL go_v_qnn cases")
+		for i, c := range cases {
+			fmt.Printf("  [%d] %s\n", i+1, c.Name)
+		}
+		fmt.Println("  [b] Back")
+		fmt.Print("Choice: ")
+
+		line, err := readLine(in)
+		if err != nil {
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "b" || line == "B" || line == "back" {
+			return
+		}
+		if line == "0" {
+			fmt.Println()
+			_ = withSuiteLog(func() error {
+				if err := govqnn.RunAll(); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return err
+				}
+				fmt.Println("✅ Go_v_QNN: all PASS")
+				return nil
+			})
+			continue
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(cases) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		fmt.Println()
+		_ = withSuiteLog(func() error {
+			if err := govqnn.RunOne(n); err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return err
 			}

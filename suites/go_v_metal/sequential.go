@@ -328,8 +328,12 @@ func caseSequentialAllDTypes() error {
 		}
 		winner, _, vsGo := pickFastest(names, uss)
 		winCount[winner]++
+		vsGoStr := "baseline"
+		if winner != "Go" {
+			vsGoStr = fmt.Sprintf("%s %+0.1f%%", winner, vsGo)
+		}
 		fmt.Printf("      %-12s %-12s %6.2f%% %9s %9s %9s %8s %s\n",
-			dt, m.Band, m.ExactPct, FormatUS(goUS), cppStr, FormatUS(metalUS), winner, vsGo)
+			dt, m.Band, m.ExactPct, FormatUS(goUS), cppStr, FormatUS(metalUS), winner, vsGoStr)
 		if m.Band != suites.DetExactBit {
 			fails = append(fails, fmt.Sprintf("%s: %s", dt, suites.FormatSpectrum(m)))
 		}

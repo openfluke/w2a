@@ -15,7 +15,6 @@ import (
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/layernorm"
-	"github.com/openfluke/welvet/layers/metacognition"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/layers/rmsnorm"
@@ -34,6 +33,20 @@ func CasesVolume() []Case {
 		{Name: "Volume Dense 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeDense3x3x3AllDTypes},
 		{Name: "Volume MHA 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeMHA3x3x3AllDTypes},
 		{Name: "Volume SwiGLU 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeSwiGLU3x3x3AllDTypes},
+		{Name: "Volume Sequential 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeSequential3x3x3AllDTypes},
+		{Name: "Volume Residual 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeResidual3x3x3AllDTypes},
+		{Name: "Volume RNN 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeRNN3x3x3AllDTypes},
+		{Name: "Volume LSTM 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeLSTM3x3x3AllDTypes},
+		{Name: "Volume Metacognition 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeMeta3x3x3AllDTypes},
+		{Name: "Volume Embedding 1×1×1×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeEmbedding1x1x1AllDTypes},
+		{Name: "Volume Mamba 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeMamba3x3x3AllDTypes},
+		{Name: "Volume GDN 3×3×3×1 Float32 — ≥99% + Go/C++/Metal timings", Run: caseVolumeGDN3x3x3Float32},
+		{Name: "Volume CNN1 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeCNN13x3x3AllDTypes},
+		{Name: "Volume CNN2 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeCNN23x3x3AllDTypes},
+		{Name: "Volume CNN3 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeCNN33x3x3AllDTypes},
+		{Name: "Volume ConvT1 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeConvT13x3x3AllDTypes},
+		{Name: "Volume ConvT2 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeConvT23x3x3AllDTypes},
+		{Name: "Volume ConvT3 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeConvT33x3x3AllDTypes},
 		{Name: "Volume AllLayers 3×3×3 × dtypes — mount-all volume wires", Run: caseVolumeAllLayers3x3x3},
 	}
 }
@@ -1064,6 +1077,8 @@ const (
 	volKM      volLayerKind = "KMeans"
 	volMHA     volLayerKind = "MHA"
 	volSwiGLU  volLayerKind = "SwiGLU"
+	volSeq     volLayerKind = "Sequential"
+	volRes     volLayerKind = "Residual"
 )
 
 func caseVolumeAllLayers3x3x3() error {
@@ -1075,10 +1090,9 @@ func caseVolumeAllLayers3x3x3() error {
 	if err != nil {
 		return err
 	}
-	// Metacognition omitted here: WMC1 always installs DefaultStabilityRules (no rule wire),
-	// and Identity/Gate mid-hop diverges on low-bit soft-double vs Go cell state. Leaf suite covers Meta.
-	kinds := []volLayerKind{volDense, volRMS, volLN, volSoftmax, volPar, volKM, volMHA, volSwiGLU}
-	fmt.Printf("\n      Volume AllLayers 3×3×3×1 — Go Forward vs Metal mount-all (WVF1/WMV1/WRF1/WLF1/WSF1/WPF1/WKF1/WSG1)")
+	// Meta has dedicated MCG1 ×33 suite (uint2 skipped); not in AllLayers.
+	kinds := []volLayerKind{volDense, volRMS, volLN, volSoftmax, volPar, volKM, volMHA, volSwiGLU, volSeq, volRes}
+	fmt.Printf("\n      Volume AllLayers 3×3×3×1 — Go Forward vs Metal mount-all (*G1 / WRF1…WKF1 / WSG1)")
 	fmt.Printf("\n      kinds=%v  cells=%d  dtypes=%d\n", kinds, depth*rows*cols*lpc, len(core.AllDTypes))
 
 	var fails []string
@@ -1169,6 +1183,10 @@ func runVolAllLayerOnce(kind volLayerKind, depth, rows, cols, lpc, batch, dim in
 			return nil, nil, err
 		}
 		return canonF32Zeros(goOut), canonF32Zeros(mtlOut), nil
+	case volSeq:
+		return runVolSeq(depth, rows, cols, lpc, batch, dim, dt, be, metalTool)
+	case volRes:
+		return runVolRes(depth, rows, cols, lpc, batch, dim, dt, be, metalTool)
 	default:
 		return nil, nil, fmt.Errorf("unknown kind %s", kind)
 	}
@@ -1341,49 +1359,64 @@ func runVolSoftmax(depth, rows, cols, lpc, batch, dim int, dt core.DType, be cor
 }
 
 func runVolMeta(depth, rows, cols, lpc, batch, dim int, dt core.DType, be core.Backend, metalTool string) ([]float32, []float32, error) {
-	// Inert rules (not empty — empty → DefaultStabilityRules). Avoids Identity/Gate
-	// mutating Observed mid-volume on low-bit dtypes (Go cell state vs fresh Metal leaf).
-	cfg := metacognition.Config{
-		Dim:   dim,
-		Rules: []metacognition.Rule{{Condition: metacognition.CondNone}},
+	// Empty Rules → DefaultStabilityRules on Go and MCG1/Metal/cpp.
+	if depth != 3 || rows != 3 || cols != 3 || lpc != 1 {
+		return nil, nil, fmt.Errorf("runVolMeta: only 3×3×3×1 via MCG1")
 	}
-	g := architecture.NewGrid(depth, rows, cols, lpc)
-	x := volRand(0x4d435331, batch*dim)
-	var seed uint32 = 0x4d435332
-	packedCells := make([][]float32, 0, depth*rows*cols*lpc)
-	for _, c := range g.HopOrder() {
-		W := volRand(seed, dim*dim)
-		seed++
-		packedCells = append(packedCells, W)
-		l, err := metacognition.NewConfigured(cfg, dt, quant.FormatNone, W)
-		if err != nil {
-			return nil, nil, err
-		}
-		l.Exec.Backend = be
-		l.Exec.MultiCore = false
-		l.Observed.Exec.MultiCore = false
-		l.Observed.Exec.Backend = be
-		if err := metacognition.Place(g, c.Z, c.Y, c.X, c.L, l); err != nil {
-			return nil, nil, err
-		}
+	_, _, _, _, _ = batch, dim, depth, rows, cols
+	g, payload, tin, err := buildVolMetaPayload(dt, be)
+	if err != nil {
+		return nil, nil, err
 	}
-	tin := core.NewTensor[float32](batch, dim)
-	copy(tin.Data, x)
 	res, err := forward.Forward(g, tin)
 	if err != nil {
 		return nil, nil, err
 	}
-	cur := append([]float32(nil), x...)
-	for _, W := range packedCells {
-		fc := mcCase{cfg: cfg, dtype: dt, backend: be, batch: batch, seq: 1, packed: W, x: cur}
-		_, post, err := runMetalMeta(fc)
-		if err != nil {
-			return nil, nil, err
-		}
-		cur = post
+	if metalTool == "" {
+		return res.Output.Data, nil, nil
 	}
-	_ = metalTool
-	return res.Output.Data, cur, nil
+	mtl, err := runVolPayload(metalTool, payload)
+	return canonF32Zeros(res.Output.Data), canonF32Zeros(mtl.Out), err
+}
+
+func runVolSeq(depth, rows, cols, lpc, batch, dim int, dt core.DType, be core.Backend, metalTool string) ([]float32, []float32, error) {
+	if depth != 3 || rows != 3 || cols != 3 || lpc != 1 || dim != 4 {
+		return nil, nil, fmt.Errorf("runVolSeq: only 3×3×3×1 dim=4 via SQG1")
+	}
+	_ = batch
+	g, payload, tin, err := buildVolSequentialPayload(dt, be)
+	if err != nil {
+		return nil, nil, err
+	}
+	res, err := forward.Forward(g, tin)
+	if err != nil {
+		return nil, nil, err
+	}
+	if metalTool == "" {
+		return res.Output.Data, nil, nil
+	}
+	mtl, err := runVolPayload(metalTool, payload)
+	return canonF32Zeros(res.Output.Data), canonF32Zeros(mtl.Out), err
+}
+
+func runVolRes(depth, rows, cols, lpc, batch, dim int, dt core.DType, be core.Backend, metalTool string) ([]float32, []float32, error) {
+	if depth != 3 || rows != 3 || cols != 3 || lpc != 1 || dim != 4 {
+		return nil, nil, fmt.Errorf("runVolRes: only 3×3×3×1 dim=4 via REG1")
+	}
+	_ = batch
+	g, payload, tin, err := buildVolResidualPayload(dt, be)
+	if err != nil {
+		return nil, nil, err
+	}
+	res, err := forward.Forward(g, tin)
+	if err != nil {
+		return nil, nil, err
+	}
+	if metalTool == "" {
+		return res.Output.Data, nil, nil
+	}
+	mtl, err := runVolPayload(metalTool, payload)
+	return canonF32Zeros(res.Output.Data), canonF32Zeros(mtl.Out), err
 }
 
 func runVolParallel(depth, rows, cols, lpc, batch, dim int, dt core.DType, be core.Backend, metalTool string) ([]float32, []float32, error) {

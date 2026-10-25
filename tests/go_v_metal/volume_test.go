@@ -35,6 +35,25 @@ func TestGoVMetalVolumeMHA(t *testing.T) {
 	}
 }
 
+// TestGoVMetalVolumeSwiGLU — SwiGLU 3×3×3×1 ×34 only.
+// Run: go test ./tests/go_v_metal/ -v -run '^TestGoVMetalVolumeSwiGLU$'
+func TestGoVMetalVolumeSwiGLU(t *testing.T) {
+	for _, c := range gvm.CasesVolume() {
+		if c.Name != "Volume SwiGLU 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings" &&
+			c.Name != "Locate welvet.metal tool" &&
+			c.Name != "Locate welvet.cpp tool (optional speed)" {
+			continue
+		}
+		suites.BeginCase()
+		t.Logf("[swiglu-vol] %s …", c.Name)
+		if err := c.Run(); err != nil {
+			suites.EndCase("go_v_metal_volume_swiglu", c.Name, "FAIL", err.Error())
+			t.Fatal(fmt.Errorf("%s: %w", c.Name, err))
+		}
+		suites.EndCase("go_v_metal_volume_swiglu", c.Name, "PASS", "")
+	}
+}
+
 // TestGoVMetalVolumeAllLayers — mount-all volume wires × kinds ×34.
 // Run: go test ./tests/go_v_metal/ -v -run '^TestGoVMetalVolumeAllLayers$'
 func TestGoVMetalVolumeAllLayers(t *testing.T) {

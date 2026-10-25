@@ -20,6 +20,7 @@ import (
 	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/layers/rmsnorm"
 	"github.com/openfluke/welvet/layers/softmax"
+	"github.com/openfluke/welvet/layers/swiglu"
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/runtime/forward"
 )
@@ -32,6 +33,7 @@ func CasesVolume() []Case {
 		{Name: "Volume Dense 2×1×1×1 remote hop — exact bits vs Go", Run: caseVolumeRemoteHop},
 		{Name: "Volume Dense 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeDense3x3x3AllDTypes},
 		{Name: "Volume MHA 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeMHA3x3x3AllDTypes},
+		{Name: "Volume SwiGLU 3×3×3×1 ×34 — ≥99% + Go/C++/Metal timings", Run: caseVolumeSwiGLU3x3x3AllDTypes},
 		{Name: "Volume AllLayers 3×3×3 × dtypes — mount-all volume wires", Run: caseVolumeAllLayers3x3x3},
 	}
 }
@@ -784,6 +786,269 @@ func runVolMHA(depth, rows, cols, lpc, batch, seq int, cfg mha.Config, dt core.D
 	return res.Output.Data, mtl.Out, err
 }
 
+// --- SwiGLU 3×3×3 volume (WSG1 mount-all + volume_dense) ---
+
+type sgVolPack struct {
+	gate, up, down []float32
+	in, inter      int
+	dtype          core.DType
+}
+
+func encodeVolumeSwiGLU(depth, rows, cols, lpc, batch int, backend core.Backend, links [][8]int32, cells []sgVolPack, x []float32) ([]byte, error) {
+	var in bytes.Buffer
+	_, _ = in.Write([]byte("WSG1"))
+	_ = binary.Write(&in, binary.LittleEndian, int32(depth))
+	_ = binary.Write(&in, binary.LittleEndian, int32(rows))
+	_ = binary.Write(&in, binary.LittleEndian, int32(cols))
+	_ = binary.Write(&in, binary.LittleEndian, int32(lpc))
+	_ = binary.Write(&in, binary.LittleEndian, int32(batch))
+	_ = binary.Write(&in, binary.LittleEndian, int32(backend))
+	_ = binary.Write(&in, binary.LittleEndian, int32(len(links)))
+	for _, L := range links {
+		for _, v := range L {
+			_ = binary.Write(&in, binary.LittleEndian, v)
+		}
+	}
+	if len(cells) != depth*rows*cols*lpc {
+		return nil, fmt.Errorf("swiglu cells len %d != stack %d", len(cells), depth*rows*cols*lpc)
+	}
+	for _, c := range cells {
+		en := int32(0)
+		if c.gate != nil {
+			en = 1
+		}
+		_ = binary.Write(&in, binary.LittleEndian, en)
+		if en == 0 {
+			continue
+		}
+		_ = binary.Write(&in, binary.LittleEndian, int32(c.in))
+		_ = binary.Write(&in, binary.LittleEndian, int32(c.inter))
+		_ = binary.Write(&in, binary.LittleEndian, int32(c.dtype))
+		for _, v := range c.gate {
+			_ = binary.Write(&in, binary.LittleEndian, v)
+		}
+		for _, v := range c.up {
+			_ = binary.Write(&in, binary.LittleEndian, v)
+		}
+		for _, v := range c.down {
+			_ = binary.Write(&in, binary.LittleEndian, v)
+		}
+	}
+	for _, v := range x {
+		_ = binary.Write(&in, binary.LittleEndian, v)
+	}
+	return in.Bytes(), nil
+}
+
+func runToolVolumeSwiGLU(tool string, depth, rows, cols, lpc, batch int, backend core.Backend, links [][8]int32, cells []sgVolPack, x []float32, benchIters int) (volTiming, error) {
+	payload, err := encodeVolumeSwiGLU(depth, rows, cols, lpc, batch, backend, links, cells, x)
+	if err != nil {
+		return volTiming{}, err
+	}
+	var cmd *exec.Cmd
+	if benchIters > 0 {
+		cmd = exec.Command(tool, fmt.Sprintf("--bench=%d", benchIters))
+	} else {
+		cmd = exec.Command(tool)
+	}
+	cmd.Stdin = bytes.NewReader(payload)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return volTiming{}, fmt.Errorf("%v: %s", err, stderr.String())
+	}
+	return decodeVolumeResp(stdout.Bytes())
+}
+
+func buildVolumeSwiGLU3x3x3(cfg swiglu.Config, dt core.DType, be core.Backend) (g *architecture.Grid, cells []sgVolPack, x []float32, err error) {
+	const depth, rows, cols, lpc, batch = 3, 3, 3, 1, 1
+	const scale float32 = 0.05
+	if err := cfg.Validate(); err != nil {
+		return nil, nil, nil, err
+	}
+	g = architecture.NewGrid(depth, rows, cols, lpc)
+	inD, inter := cfg.InputDim, cfg.IntermediateDim
+	cells = make([]sgVolPack, 0, depth*rows*cols*lpc)
+	var seed uint32 = 0x53574733
+	for _, c := range g.HopOrder() {
+		p := sgVolPack{
+			gate: volRand(seed, inter*inD), up: volRand(seed+1, inter*inD),
+			down: volRand(seed+2, inD*inter), in: inD, inter: inter, dtype: dt,
+		}
+		seed += 4
+		scaleSlice(p.gate, scale)
+		scaleSlice(p.up, scale)
+		scaleSlice(p.down, scale)
+		l, err := swiglu.NewConfigured(cfg, dt, quant.FormatNone, p.gate, p.up, p.down)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		l.Exec.Backend = be
+		l.Exec.MultiCore = false
+		l.Core.MultiCore = false
+		l.Gate.Exec.MultiCore = false
+		l.Up.Exec.MultiCore = false
+		l.Down.Exec.MultiCore = false
+		l.Gate.Exec.Backend = be
+		l.Up.Exec.Backend = be
+		l.Down.Exec.Backend = be
+		if err := swiglu.Place(g, c.Z, c.Y, c.X, c.L, l); err != nil {
+			return nil, nil, nil, err
+		}
+		cells = append(cells, p)
+	}
+	x = volRand(0x53574778, batch*inD)
+	scaleSlice(x, scale)
+	return g, cells, x, nil
+}
+
+func caseVolumeSwiGLU3x3x3AllDTypes() error {
+	const depth, rows, cols, lpc, batch, benchIters = 3, 3, 3, 1, 1, 20
+	cfg := swiglu.Config{InputDim: 8, IntermediateDim: 16}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	if len(core.AllDTypes) != 34 {
+		return fmt.Errorf("expected 34 dtypes, got %d", len(core.AllDTypes))
+	}
+	metalTool, err := findMetalFwd()
+	if err != nil {
+		return err
+	}
+	cppTool, cppErr := findCppFwd()
+	haveCpp := cppErr == nil
+	be := core.BackendCPUTiled
+	nCells := depth * rows * cols * lpc
+
+	fmt.Printf("\n      Go vs Metal volume SwiGLU 3×3×3×1 (cells=%d) FormatNone×34 — exact_bit preferred (≥99%% ok)", nCells)
+	fmt.Printf("\n      speed: Go / C++ / Metal — winner on warm mtl_exec (WSG1 mount-all → volume_dense)")
+	fmt.Printf("\n      shape B=%d in=%d inter=%d", batch, cfg.InputDim, cfg.IntermediateDim)
+	fmt.Printf("\n      %-12s %-12s %7s %9s %9s %10s %9s %8s %s\n",
+		"dtype", "band", "exact%", "go_µs", "cpp_µs", "mtl_mount", "mtl_exec", "winner", "vsGo")
+	fmt.Printf("      %s\n", strings.Repeat("-", 110))
+
+	var fails, soft []string
+	var exactN, totalN int
+	winCount := map[string]int{}
+
+	for _, dt := range core.AllDTypes {
+		g, cells, x, err := buildVolumeSwiGLU3x3x3(cfg, dt, be)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s build: %v", dt, err))
+			fmt.Printf("      %-12s FAIL %v\n", dt, err)
+			continue
+		}
+		tin := core.NewTensor[float32](batch, cfg.InputDim)
+		copy(tin.Data, x)
+		res, err := forward.Forward(g, tin)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s go: %v", dt, err))
+			fmt.Printf("      %-12s FAIL go %v\n", dt, err)
+			continue
+		}
+		mtlParity, err := runToolVolumeSwiGLU(metalTool, depth, rows, cols, lpc, batch, be, nil, cells, x, 0)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s metal: %v", dt, err))
+			fmt.Printf("      %-12s FAIL metal %v\n", dt, err)
+			continue
+		}
+		m := suites.CompareF32Spectrum(canonF32Zeros(res.Output.Data), canonF32Zeros(mtlParity.Out))
+		exactN += m.ExactBits
+		totalN += m.N
+
+		goUS, err := benchGoUS(func() error {
+			_, e := forward.Forward(g, tin)
+			return e
+		}, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
+			continue
+		}
+		cppUS := 0.0
+		cppStr := "—"
+		if haveCpp {
+			cppT, err := runToolVolumeSwiGLU(cppTool, depth, rows, cols, lpc, batch, be, nil, cells, x, benchIters)
+			if err != nil {
+				cppStr = "err"
+			} else {
+				cppUS = cppT.ExecUS
+				cppStr = FormatUS(cppUS)
+			}
+		}
+		mtlT, err := runToolVolumeSwiGLU(metalTool, depth, rows, cols, lpc, batch, be, nil, cells, x, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s metal bench: %v", dt, err))
+			continue
+		}
+		names := []string{"Go", "Metal"}
+		uss := []float64{goUS, mtlT.ExecUS}
+		if haveCpp && cppUS > 0 {
+			names = []string{"Go", "C++", "Metal"}
+			uss = []float64{goUS, cppUS, mtlT.ExecUS}
+		}
+		winner, _, vsGo := pickFastest(names, uss)
+		winCount[winner]++
+		vsGoStr := "baseline"
+		if winner != "Go" {
+			vsGoStr = fmt.Sprintf("%s %+0.1f%%", winner, vsGo)
+		}
+		fmt.Printf("      %-12s %-12s %6.2f%% %9s %9s %10s %9s %8s %s\n",
+			dt, m.Band, m.ExactPct, FormatUS(goUS), cppStr, FormatUS(mtlT.MountUS), FormatUS(mtlT.ExecUS), winner, vsGoStr)
+		if m.Band != suites.DetExactBit {
+			soft = append(soft, fmt.Sprintf("%s: %s", dt, suites.FormatSpectrum(m)))
+		}
+		if m.Band < suites.DetIndustry && m.MaxAbs > 1e-20 {
+			fails = append(fails, fmt.Sprintf("%s below industry: %s", dt, suites.FormatSpectrum(m)))
+		}
+	}
+	overallExact := 0.0
+	if totalN > 0 {
+		overallExact = 100.0 * float64(exactN) / float64(totalN)
+	}
+	fmt.Printf("      %s\n", strings.Repeat("-", 110))
+	fmt.Printf("      overall exact_bits=%.2f%%  (aim≥99%% vs Go; WSG1 mount-all + volume_dense)\n", overallExact)
+	parts := []string{}
+	for _, n := range []string{"Go", "C++", "Metal"} {
+		if winCount[n] > 0 {
+			parts = append(parts, fmt.Sprintf("%s=%d", n, winCount[n]))
+		}
+	}
+	fmt.Printf("      wins: %s  (winner uses mtl_exec; mtl_mount = bind-all once)\n", strings.Join(parts, " "))
+	if len(soft) > 0 {
+		fmt.Printf("      soft (non-exact_bit, allowed if overall≥99%%): %s\n", strings.Join(soft, " | "))
+	}
+	if len(fails) > 0 {
+		return fmt.Errorf("%d swiglu-volume issues: %s", len(fails), strings.Join(fails, " | "))
+	}
+	if overallExact < 99.0 {
+		return fmt.Errorf("overall exact_bits=%.2f%% < 99%%", overallExact)
+	}
+	return nil
+}
+
+func runVolSwiGLU(depth, rows, cols, lpc, batch, dim, inter int, dt core.DType, be core.Backend, metalTool string) (goOut, mtlOut []float32, err error) {
+	if depth != 3 || rows != 3 || cols != 3 || lpc != 1 {
+		return nil, nil, fmt.Errorf("runVolSwiGLU: only 3×3×3×1 supported via WSG1")
+	}
+	cfg := swiglu.Config{InputDim: dim, IntermediateDim: inter}
+	g, cells, x, err := buildVolumeSwiGLU3x3x3(cfg, dt, be)
+	if err != nil {
+		return nil, nil, err
+	}
+	tin := core.NewTensor[float32](batch, dim)
+	copy(tin.Data, x)
+	res, err := forward.Forward(g, tin)
+	if err != nil {
+		return nil, nil, err
+	}
+	if metalTool == "" {
+		return res.Output.Data, nil, nil
+	}
+	mtl, err := runToolVolumeSwiGLU(metalTool, depth, rows, cols, lpc, batch, be, nil, cells, x, 0)
+	return res.Output.Data, mtl.Out, err
+}
+
 // --- AllLayers 3×3×3: dim-preserving Metal-signed layers × dtypes via Go volume vs Metal Dense-volume for Dense,
 // and Go volume Forward vs Metal leaf-equivalent rebuild for other kinds (same hop order / posts semantics).
 
@@ -798,6 +1063,7 @@ const (
 	volPar     volLayerKind = "Parallel"
 	volKM      volLayerKind = "KMeans"
 	volMHA     volLayerKind = "MHA"
+	volSwiGLU  volLayerKind = "SwiGLU"
 )
 
 func caseVolumeAllLayers3x3x3() error {
@@ -811,8 +1077,8 @@ func caseVolumeAllLayers3x3x3() error {
 	}
 	// Metacognition omitted here: WMC1 always installs DefaultStabilityRules (no rule wire),
 	// and Identity/Gate mid-hop diverges on low-bit soft-double vs Go cell state. Leaf suite covers Meta.
-	kinds := []volLayerKind{volDense, volRMS, volLN, volSoftmax, volPar, volKM, volMHA}
-	fmt.Printf("\n      Volume AllLayers 3×3×3×1 — Go Forward vs Metal mount-all (WVF1/WMV1/WRF1/WLF1/WSF1/WPF1/WKF1)")
+	kinds := []volLayerKind{volDense, volRMS, volLN, volSoftmax, volPar, volKM, volMHA, volSwiGLU}
+	fmt.Printf("\n      Volume AllLayers 3×3×3×1 — Go Forward vs Metal mount-all (WVF1/WMV1/WRF1/WLF1/WSF1/WPF1/WKF1/WSG1)")
 	fmt.Printf("\n      kinds=%v  cells=%d  dtypes=%d\n", kinds, depth*rows*cols*lpc, len(core.AllDTypes))
 
 	var fails []string
@@ -893,6 +1159,12 @@ func runVolAllLayerOnce(kind volLayerKind, depth, rows, cols, lpc, batch, dim in
 		}
 		const seq = 2
 		goOut, mtlOut, err := runVolMHA(depth, rows, cols, lpc, batch, seq, cfg, dt, be, metalTool)
+		if err != nil {
+			return nil, nil, err
+		}
+		return canonF32Zeros(goOut), canonF32Zeros(mtlOut), nil
+	case volSwiGLU:
+		goOut, mtlOut, err := runVolSwiGLU(depth, rows, cols, lpc, batch, dim, dim*2, dt, be, metalTool)
 		if err != nil {
 			return nil, nil, err
 		}

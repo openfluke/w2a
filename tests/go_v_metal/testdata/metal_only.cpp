@@ -1,4 +1,5 @@
 #include "welvet/architecture.hpp"
+#include "welvet/systems/tween.hpp"
 #include "welvet/metal/device.hpp"
 #include "welvet/metal/training.hpp"
 #include "welvet/runtime/training.hpp"
@@ -96,6 +97,37 @@ int main() {
       check(std::abs(dx.data[i]-float(derivative))<2e-7,"Dense activation derivative mismatch");
     }
   }
+  // Projection must use extended sums and preserve Go block-average mapping.
+  TensorF32 gap, projected;
+  gap.shape = {4}; gap.data = {2,4,6,8};
+  success(systems::tween::project_gap(gap, {2}, &projected));
+  check(projected.data == std::vector<float>({3,7}), "Tween downsample mismatch");
+  success(systems::tween::project_gap(gap, {2,3}, &projected));
+  check(projected.shape == std::vector<int64_t>({2,3}) &&
+        projected.data == std::vector<float>({2,2,4,6,6,8}), "Tween upsample mismatch");
+  gap.shape = {3}; gap.data = {1e8f,1,-1e8f};
+  success(systems::tween::project_gap(gap, {1}, &projected));
+  check(projected.data[0] == float(1.0/3.0), "Tween projection lost cancellation residual");
+  check(!systems::tween::project_gap(gap, {0}, &projected), "Tween zero shape accepted");
+  check(!systems::tween::project_gap(gap, {-1}, &projected), "Tween negative shape accepted");
+  check(!systems::tween::project_gap(gap, {INT64_MAX,2}, &projected), "Tween oversized shape accepted");
+  check(!systems::tween::project_gap(gap, {1}, nullptr), "Tween nil projection accepted");
+  // Nested projected credit feeds the original tape to every local update.
+  stack::Child nested;
+  nested.kind = stack::Kind::NestedStack;
+  nested.nested.resize(2);
+  for (int i=0; i<2; ++i) {
+    nested.nested[i].kind = stack::Kind::Dense;
+    float initial[] = {float(i+1)};
+    success(dense::new_layer(1,1,Activation::Linear,DType::Float32,initial,
+                            &nested.nested[i].dense_op));
+  }
+  TensorF32 nx, ng;
+  nx.shape={1,1}; nx.data={1}; ng=nx;
+  success(systems::tween::apply_projected(nested, ng, nx, 0.1));
+  check(nested.nested[0].dense_op.weights.f32[0] == 0.9f &&
+        nested.nested[1].dense_op.weights.f32[0] == 1.9f,
+        "Nested Tween used chained or updated-input credit");
   // GPU cache must observe each new weight update, including changed batch size.
   dense::Layer l;
   float wi[] = {1}; success(dense::new_layer(1, 1, Activation::Linear, DType::Float32, wi, &l));

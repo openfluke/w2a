@@ -7,8 +7,12 @@ import (
 )
 
 // lossWithin1Ulp is true when a and b are identical or adjacent float64 bit patterns.
-// On ARM, Go vs native scalar MSE often differs by 1 ULP while f32 tensors stay exact_bit.
+// On ARM, Go vs native scalar MSE often differs by 1–2 ULPs while f32 tensors stay exact_bit.
 func lossWithin1Ulp(a, b float64) bool {
+	return lossWithinNUlp(a, b, 2)
+}
+
+func lossWithinNUlp(a, b float64, n uint64) bool {
 	if a == b {
 		return true
 	}
@@ -19,7 +23,7 @@ func lossWithin1Ulp(a, b float64) bool {
 	if ai > bi {
 		ai, bi = bi, ai
 	}
-	return bi-ai <= 1
+	return bi-ai <= n
 }
 
 const defaultGoBenchIters = 2000

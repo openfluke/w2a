@@ -1,5 +1,7 @@
 #include "welvet/architecture.hpp"
 #include "welvet/systems/tween.hpp"
+#include "welvet/systems/tween_chain.hpp"
+#include "welvet/runtime/tween_chain_train.hpp"
 #include "welvet/metal/device.hpp"
 #include "welvet/metal/training.hpp"
 #include "welvet/runtime/training.hpp"
@@ -128,6 +130,41 @@ int main() {
   check(nested.nested[0].dense_op.weights.f32[0] == 0.9f &&
         nested.nested[1].dense_op.weights.f32[0] == 1.9f,
         "Nested Tween used chained or updated-input credit");
+  // True chain-rule credit uses old downstream weights and the full rate.
+  stack::Layer chain;
+  chain.children.resize(2);
+  for (int i=0; i<2; ++i) {
+    chain.children[i].kind=stack::Kind::Dense;
+    float initial[]={float(i+1)};
+    success(dense::new_layer(1,1,Activation::Linear,DType::Float32,initial,
+                            &chain.children[i].dense_op));
+  }
+  TensorF32 cx, ct;
+  cx.shape={1,1}; cx.data={1}; ct=cx; ct.data={0};
+  double chain_loss=0;
+  success(runtime::tween_chain_train::train_stack_mse(chain,cx,ct,0.1,&chain_loss));
+  check(chain_loss==4 && chain.children[0].dense_op.weights.f32[0]==1.0f-0.8f &&
+        chain.children[1].dense_op.weights.f32[0]==2.0f-0.4f,
+        "TweenChain leaf lost chain-rule/full-rate credit");
+  auto chain_grid=architecture::new_grid(1,1,2,1);
+  for (int i=0; i<2; ++i) {
+    dense::Layer leaf; float initial[]={float(i+1)};
+    success(dense::new_layer(1,1,Activation::Linear,DType::Float32,initial,&leaf));
+    success(architecture::bind_dense(chain_grid,0,0,i,0,std::move(leaf)));
+  }
+  runtime::forward::Result chain_fwd;
+  runtime::backward::Result chain_bwd;
+  success(runtime::forward::volume_dense(chain_grid,cx,&chain_fwd));
+  success(systems::tween_chain::train_volume_mse(chain_grid,chain_fwd,ct,0.1,&chain_loss,&chain_bwd));
+  check(chain_loss==4 && chain_bwd.grad_in.data==std::vector<float>({8}) &&
+        chain_grid.cells[0].dense_op.weights.f32[0]==1.0f-0.8f &&
+        chain_grid.cells[1].dense_op.weights.f32[0]==2.0f-0.4f,
+        "TweenChain volume lost true input gradient/full-rate credit");
+  check(!runtime::tween_chain_train::train_stack_mse(chain,cx,ct,0.1,nullptr),
+        "TweenChain nil loss accepted");
+  stack::Layer empty_chain;
+  check(!runtime::tween_chain_train::train_stack_mse(empty_chain,cx,ct,0.1,&chain_loss),
+        "TweenChain empty stack accepted");
   // GPU cache must observe each new weight update, including changed batch size.
   dense::Layer l;
   float wi[] = {1}; success(dense::new_layer(1, 1, Activation::Linear, DType::Float32, wi, &l));

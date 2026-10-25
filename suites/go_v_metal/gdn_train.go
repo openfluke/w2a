@@ -52,7 +52,7 @@ func compareGDNNBP(goO, mtlO nbpLeafOut) error {
 			return fmt.Errorf("%s below loose: %s", c.name, suites.FormatSpectrum(m))
 		}
 	}
-	if !lossWithin1Ulp(goO.loss, mtlO.loss) {
+	if !metalLossWithinBand(goO.loss, mtlO.loss) {
 		rel := math.Abs(goO.loss-mtlO.loss) / math.Max(1e-30, math.Abs(goO.loss))
 		if rel > 1e-5 {
 			return fmt.Errorf("loss go=%g mtl=%g rel=%g", goO.loss, mtlO.loss, rel)
@@ -63,7 +63,7 @@ func compareGDNNBP(goO, mtlO nbpLeafOut) error {
 }
 
 func compareGDNVolNBP(goO, mtlO nbpVolOut) error {
-	if !lossWithin1Ulp(goO.loss, mtlO.loss) {
+	if !metalLossWithinBand(goO.loss, mtlO.loss) {
 		rel := math.Abs(goO.loss-mtlO.loss) / math.Max(1e-30, math.Abs(goO.loss))
 		if rel > 1e-5 {
 			return fmt.Errorf("loss go=%g mtl=%g rel=%g", goO.loss, mtlO.loss, rel)
@@ -322,7 +322,7 @@ func makeGdLeafCase(cfg gdn.Config, batch, seq int, seed uint32) (gdNBPLeaf, err
 }
 
 func caseGdNBPLeafF32() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := smokeGdCfg()
 	fc, err := makeGdLeafCase(cfg, 2, 3, 0x47444250)
 	if err != nil {
@@ -526,7 +526,8 @@ func gdVolPostLen(batch, seq int, cfg gdn.Config) int {
 }
 
 func caseGdNBPVol1x1x1() error {
-	const batch, seq, benchIters, lr = 2, 2, defaultGoBenchIters, 1e-2
+	const batch, seq, lr = 2, 2, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volGdCfg()
 	W := randInit(1, gdnWeightCount(cfg), 0x47445631)
 	cells := []gdVolCell{{
@@ -559,7 +560,8 @@ func caseGdNBPVol1x1x1() error {
 }
 
 func caseGdNBPVolChain() error {
-	const batch, seq, benchIters, lr = 1, 2, defaultGoBenchIters, 1e-2
+	const batch, seq, lr = 1, 2, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volGdCfg()
 	W0 := randInit(1, gdnWeightCount(cfg), 0x47445633)
 	W1 := randInit(1, gdnWeightCount(cfg), 0x47445634)
@@ -594,7 +596,8 @@ func caseGdNBPVolChain() error {
 }
 
 func caseGdNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, seq, benchIters = 2, 2, 2, 1, 1, 2, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch, seq = 2, 2, 2, 1, 1, 2
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volGdCfg()

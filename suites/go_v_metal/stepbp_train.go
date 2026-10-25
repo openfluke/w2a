@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"math"
 	"os/exec"
 	"strings"
 	"time"
@@ -17,12 +16,12 @@ import (
 	"github.com/openfluke/welvet/layers/convt1"
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/layers/embedding"
+	"github.com/openfluke/welvet/layers/gdn"
+	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/layernorm"
 	"github.com/openfluke/welvet/layers/lstm"
 	"github.com/openfluke/welvet/layers/mamba"
 	"github.com/openfluke/welvet/layers/metacognition"
-	"github.com/openfluke/welvet/layers/kmeans"
-	"github.com/openfluke/welvet/layers/gdn"
 	"github.com/openfluke/welvet/layers/mha"
 	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/layers/residual"
@@ -40,64 +39,64 @@ import (
 // CasesStepBPTrain — Line StepBP (FamilyBP on pop) Go↔Metal for NormalBP-signed kinds.
 func CasesStepBPTrain() []Case {
 	return []Case{
-		{Name: "Dense StepBP multi-hop Float32 — exact bits (W/loss)", Run: caseDenseStepBPMultiHopF32},
+		{Name: "Dense StepBP multi-hop Float32 — exact tensors; Metal loss band (W/loss)", Run: caseDenseStepBPMultiHopF32},
 		{Name: "Dense StepBP 1-hop × all 34 dtypes — spectrum + speed", Run: caseDenseStepBP1HopAllDTypes},
-		{Name: "RMSNorm StepBP 1-hop Float32 — exact bits", Run: caseRMSNormStepBPF32},
+		{Name: "RMSNorm StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseRMSNormStepBPF32},
 		{Name: "RMSNorm StepBP 1-hop × all 34 dtypes — spectrum", Run: caseRMSNormStepBPAllDTypes},
-		{Name: "LayerNorm StepBP 1-hop Float32 — exact bits", Run: caseLayerNormStepBPF32},
+		{Name: "LayerNorm StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseLayerNormStepBPF32},
 		{Name: "LayerNorm StepBP 1-hop × all 34 dtypes — spectrum", Run: caseLayerNormStepBPAllDTypes},
-		{Name: "Softmax StepBP 1-hop Float32 — exact bits (loss)", Run: caseSoftmaxStepBPF32},
+		{Name: "Softmax StepBP 1-hop Float32 — exact tensors; Metal loss band (loss)", Run: caseSoftmaxStepBPF32},
 		{Name: "Softmax StepBP 1-hop × all 34 dtypes — spectrum", Run: caseSoftmaxStepBPAllDTypes},
-		{Name: "SwiGLU StepBP 1-hop Float32 — exact bits", Run: caseSwiGLUStepBPF32},
+		{Name: "SwiGLU StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseSwiGLUStepBPF32},
 		{Name: "SwiGLU StepBP 1-hop × all 34 dtypes — spectrum", Run: caseSwiGLUStepBPAllDTypes},
-		{Name: "Sequential StepBP 1-hop Float32 — exact bits", Run: caseSequentialStepBPF32},
+		{Name: "Sequential StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseSequentialStepBPF32},
 		{Name: "Sequential StepBP 1-hop × all 34 dtypes — spectrum", Run: caseSequentialStepBPAllDTypes},
-		{Name: "Residual StepBP 1-hop Float32 — exact bits", Run: caseResidualStepBPF32},
+		{Name: "Residual StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseResidualStepBPF32},
 		{Name: "Residual StepBP 1-hop × all 34 dtypes — spectrum", Run: caseResidualStepBPAllDTypes},
-		{Name: "Mamba StepBP 1-hop Float32 — exact bits", Run: caseMambaStepBPF32},
+		{Name: "Mamba StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseMambaStepBPF32},
 		{Name: "Mamba StepBP 1-hop × all 34 dtypes — spectrum", Run: caseMambaStepBPAllDTypes},
-		{Name: "Metacognition StepBP 1-hop Float32 — exact bits", Run: caseMetacognitionStepBPF32},
+		{Name: "Metacognition StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseMetacognitionStepBPF32},
 		{Name: "Metacognition StepBP 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionStepBPAllDTypes},
 		// KMeans StepBP deferred until kmeans.normalbp.metal (child_family_bp Gap).
 		{Name: "GDN StepBP 1-hop Float32 — ≥strict vs Go (scan FP)", Run: caseGDNStepBPF32},
-		{Name: "NestedStack StepBP 1-hop Float32 — exact bits", Run: caseNestedStackStepBPF32},
+		{Name: "NestedStack StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseNestedStackStepBPF32},
 		{Name: "NestedStack StepBP 1-hop × all 34 dtypes — spectrum", Run: caseNestedStackStepBPAllDTypes},
-		{Name: "Embedding StepBP 1-hop Float32 — exact bits", Run: caseEmbeddingStepBPF32},
+		{Name: "Embedding StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseEmbeddingStepBPF32},
 		{Name: "Embedding StepBP 1-hop × all 34 dtypes — spectrum", Run: caseEmbeddingStepBPAllDTypes},
-		{Name: "MHA StepBP 1-hop Float32 — exact bits", Run: caseMHAStepBPF32},
+		{Name: "MHA StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseMHAStepBPF32},
 		{Name: "MHA StepBP 1-hop × all 34 dtypes — spectrum", Run: caseMHAStepBPAllDTypes},
-		{Name: "CNN1 StepBP 1-hop Float32 — exact bits", Run: caseCNN1StepBPF32},
+		{Name: "CNN1 StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseCNN1StepBPF32},
 		{Name: "CNN1 StepBP 1-hop × all 34 dtypes — spectrum", Run: caseCNN1StepBPAllDTypes},
-		{Name: "ConvT1 StepBP 1-hop Float32 — exact bits", Run: caseConvT1StepBPF32},
+		{Name: "ConvT1 StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseConvT1StepBPF32},
 		{Name: "ConvT1 StepBP 1-hop × all 34 dtypes — spectrum", Run: caseConvT1StepBPAllDTypes},
-		{Name: "RNN StepBP 1-hop Float32 — exact bits", Run: caseRNNStepBPF32},
+		{Name: "RNN StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseRNNStepBPF32},
 		{Name: "RNN StepBP 1-hop × all 34 dtypes — spectrum", Run: caseRNNStepBPAllDTypes},
-		{Name: "LSTM StepBP 1-hop Float32 — exact bits", Run: caseLSTMStepBPF32},
+		{Name: "LSTM StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseLSTMStepBPF32},
 		{Name: "LSTM StepBP 1-hop × all 34 dtypes — spectrum", Run: caseLSTMStepBPAllDTypes},
-		{Name: "Dense MeshBP 1×1×1×1 Float32 — exact bits", Run: caseDenseMeshBP111F32},
-		{Name: "Dense MeshBP 2×1×1×1 chain Float32 — exact bits", Run: caseDenseMeshBP211F32},
-		{Name: "Dense MeshBP 2×2×2×1 Float32 — exact bits", Run: caseDenseMeshBP222F32},
-		{Name: "Dense MeshBP volume ModeMeshBP 2×2×2×1 Float32 — exact bits", Run: caseDenseNBPVol222F32},
-		{Name: "RMSNorm MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseRMSNormNBPVol222F32},
-		{Name: "LayerNorm MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseLayerNormNBPVol222F32},
-		{Name: "Softmax MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseSoftmaxNBPVol222F32},
-		{Name: "SwiGLU MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseSwiGLUNBPVol222F32},
-		{Name: "Sequential MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseSeqNBPVol222F32},
-		{Name: "Residual MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseReNBPVol222F32},
-		{Name: "Mamba MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseMbNBPVol222F32},
-		{Name: "Metacognition MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseMcNBPVol222F32},
-		{Name: "GDN MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseGdNBPVol222F32},
-		{Name: "NestedStack MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseStNBPVol222F32},
-		{Name: "Embedding MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseEmbeddingNBPVol222F32},
-		{Name: "MHA MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseMHANBPVol222F32},
-		{Name: "CNN1 MeshBP volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNNBPVol222F32(1) }},
-		{Name: "CNN2 MeshBP volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNNBPVol222F32(2) }},
-		{Name: "CNN3 MeshBP volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseCNNNBPVol222F32(3) }},
-		{Name: "ConvT1 MeshBP volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseConvTNBPVol222F32(1) }},
-		{Name: "ConvT2 MeshBP volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseConvTNBPVol222F32(2) }},
-		{Name: "ConvT3 MeshBP volume 2×2×2×1 Float32 — exact bits", Run: func() error { return caseConvTNBPVol222F32(3) }},
-		{Name: "RNN MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseRNNNBPVol222F32},
-		{Name: "LSTM MeshBP volume 2×2×2×1 Float32 — exact bits", Run: caseLSTMNBPVol222F32},
+		{Name: "Dense MeshBP 1×1×1×1 Float32 — exact tensors; Metal loss band", Run: caseDenseMeshBP111F32},
+		{Name: "Dense MeshBP 2×1×1×1 chain Float32 — exact tensors; Metal loss band", Run: caseDenseMeshBP211F32},
+		{Name: "Dense MeshBP 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseDenseMeshBP222F32},
+		{Name: "Dense MeshBP volume ModeMeshBP 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseDenseNBPVol222F32},
+		{Name: "RMSNorm MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseRMSNormNBPVol222F32},
+		{Name: "LayerNorm MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseLayerNormNBPVol222F32},
+		{Name: "Softmax MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseSoftmaxNBPVol222F32},
+		{Name: "SwiGLU MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseSwiGLUNBPVol222F32},
+		{Name: "Sequential MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseSeqNBPVol222F32},
+		{Name: "Residual MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseReNBPVol222F32},
+		{Name: "Mamba MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseMbNBPVol222F32},
+		{Name: "Metacognition MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseMcNBPVol222F32},
+		{Name: "GDN MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseGdNBPVol222F32},
+		{Name: "NestedStack MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseStNBPVol222F32},
+		{Name: "Embedding MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseEmbeddingNBPVol222F32},
+		{Name: "MHA MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseMHANBPVol222F32},
+		{Name: "CNN1 MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: func() error { return caseCNNNBPVol222F32(1) }},
+		{Name: "CNN2 MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: func() error { return caseCNNNBPVol222F32(2) }},
+		{Name: "CNN3 MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: func() error { return caseCNNNBPVol222F32(3) }},
+		{Name: "ConvT1 MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: func() error { return caseConvTNBPVol222F32(1) }},
+		{Name: "ConvT2 MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: func() error { return caseConvTNBPVol222F32(2) }},
+		{Name: "ConvT3 MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: func() error { return caseConvTNBPVol222F32(3) }},
+		{Name: "RNN MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseRNNNBPVol222F32},
+		{Name: "LSTM MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseLSTMNBPVol222F32},
 	}
 }
 
@@ -211,18 +210,15 @@ func compareStepBP(goO, mtlO stepbpOut, requireExact bool) error {
 			return fmt.Errorf("W[%d]: %s", i, suites.FormatSpectrum(m))
 		}
 	}
-	if !lossWithin1Ulp(goO.loss, mtlO.loss) {
-		rel := math.Abs(goO.loss-mtlO.loss) / math.Max(1e-30, math.Abs(goO.loss))
-		if requireExact || rel > 1e-5 {
-			return fmt.Errorf("loss go=%g mtl=%g", goO.loss, mtlO.loss)
-		}
+	if !metalLossWithinBand(goO.loss, mtlO.loss) {
+		return fmt.Errorf("loss outside Metal float2 band: go=%g mtl=%g", goO.loss, mtlO.loss)
 	}
 	return nil
 }
 
 // runStepBPSpectrum prints Dense-style dtype×speed table then requires exact_bit on each.
 func runStepBPSpectrum(label string, build func(core.DType) (stepbpOut, []byte, error)) error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	fmt.Printf("\n      [%s StepBP ×34]\n", label)
 	fmt.Printf("      %-12s %-12s %8s %10s %10s %9s\n", "dtype", "band", "exact%W", "goµs", "mtlµs", "spd%Δ")
 	var fails []string
@@ -396,7 +392,8 @@ func caseDenseStepBPMultiHopF32() error {
 }
 
 func caseDenseStepBP1HopAllDTypes() error {
-	const in, out, batch, benchIters = 6, 4, 2, defaultGoBenchIters
+	const in, out, batch = 6, 4, 2
+	var benchIters = defaultGoBenchIters
 	W, x, bias := makeSharedInit(out, in, batch)
 	tgt := make([]float32, batch*out)
 	for i := range tgt {
@@ -1594,11 +1591,8 @@ func compareMeshBP(goO, mtlO meshbpOut, requireExact bool) error {
 			return fmt.Errorf("W[%d]: %s", i, suites.FormatSpectrum(m))
 		}
 	}
-	if !lossWithin1Ulp(goO.loss, mtlO.loss) {
-		rel := math.Abs(goO.loss-mtlO.loss) / math.Max(1e-30, math.Abs(goO.loss))
-		if requireExact && rel > 0 {
-			return fmt.Errorf("loss go=%g mtl=%g", goO.loss, mtlO.loss)
-		}
+	if !metalLossWithinBand(goO.loss, mtlO.loss) {
+		return fmt.Errorf("loss outside Metal float2 band: go=%g mtl=%g", goO.loss, mtlO.loss)
 	}
 	return nil
 }
@@ -1656,7 +1650,7 @@ func runDenseMeshBPCase(depth, rows, cols, lpc, batch, ticks, benchIters int) er
 	}
 	mtlUS := float64(mtlDur.Nanoseconds()) / float64(bi) / 1000
 	spd := suites.SpeedPctDiff(goUS, mtlUS)
-	fmt.Printf("\n      MeshBP %dx%dx%dx%d ticks=%d loss=%.6g exact_bit  go=%s  mtl=%s  spd%%Δ=%+.1f%%",
+	fmt.Printf("\n      MeshBP %dx%dx%dx%d ticks=%d loss=%.6g exact tensors, Metal loss band  go=%s  mtl=%s  spd%%Δ=%+.1f%%",
 		depth, rows, cols, lpc, ticks, goO.loss, FormatUS(goUS), FormatUS(mtlUS), spd)
 	return nil
 }
@@ -1873,4 +1867,3 @@ func runKMeansStepBP(dtype core.DType, exact bool) error {
 	}
 	return compareStepBP(goO, mtlO, exact)
 }
-

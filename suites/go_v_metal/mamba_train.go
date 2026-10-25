@@ -243,7 +243,7 @@ func makeMbLeafCase(cfg mamba.Config, batch int, dt core.DType, seed uint32) (mb
 }
 
 func caseMbNBPLeafF32() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := smokeMbCfg()
 	fc, err := makeMbLeafCase(cfg, 2, core.DTypeFloat32, 0x4d424250)
 	if err != nil {
@@ -279,7 +279,7 @@ func caseMbNBPLeafF32() error {
 }
 
 func caseMbNBPLeafAllDTypes() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := smokeMbCfg()
 	var fails []string
 	worst := suites.DetExactBit
@@ -523,7 +523,8 @@ func makeMbVolCell(cfg mamba.Config, dt core.DType, seed uint32) mbVolCell {
 }
 
 func caseMbNBPVol1x1x1() error {
-	const batch, benchIters, lr = 2, defaultGoBenchIters, 1e-2
+	const batch, lr = 2, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volMbCfg()
 	W := randInit(1, mambaWeightCount(cfg), 0x4d425631)
 	cells := []mbVolCell{{
@@ -557,7 +558,8 @@ func caseMbNBPVol1x1x1() error {
 }
 
 func caseMbNBPVolChain() error {
-	const batch, benchIters, lr = 1, defaultGoBenchIters, 1e-2
+	const batch, lr = 1, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volMbCfg()
 	W0 := randInit(1, mambaWeightCount(cfg), 0x4d425633)
 	W1 := randInit(1, mambaWeightCount(cfg), 0x4d425634)
@@ -632,7 +634,8 @@ func caseMbNBPVol111AllDTypes() error {
 }
 
 func caseMbNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volMbCfg()

@@ -65,10 +65,10 @@ type seqNBPLeaf struct {
 }
 
 type seqVolCell struct {
-	enabled      bool
+	enabled         bool
 	dim, seq, depth int
-	dtype        core.DType
-	W            []float32
+	dtype           core.DType
+	W               []float32
 }
 
 func smokeSeqCfg() sequential.Config {
@@ -248,7 +248,7 @@ func makeSeqLeafCase(cfg sequential.Config, batch, seq int, dt core.DType, seed 
 }
 
 func caseSeqNBPLeafF32() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := smokeSeqCfg()
 	fc, err := makeSeqLeafCase(cfg, 2, cfg.SeqLen, core.DTypeFloat32, 0x53514250)
 	if err != nil {
@@ -284,7 +284,7 @@ func caseSeqNBPLeafF32() error {
 }
 
 func caseSeqNBPLeafAllDTypes() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := smokeSeqCfg()
 	var fails []string
 	worst := suites.DetExactBit
@@ -531,7 +531,8 @@ func makeSeqVolCell(cfg sequential.Config, dt core.DType, seed uint32) seqVolCel
 }
 
 func caseSeqNBPVol1x1x1() error {
-	const batch, benchIters, lr = 2, defaultGoBenchIters, 1e-2
+	const batch, lr = 2, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volSeqCfg()
 	W := randInit(1, cfg.WeightCount(), 0x53515631)
 	cells := []seqVolCell{{
@@ -565,7 +566,8 @@ func caseSeqNBPVol1x1x1() error {
 }
 
 func caseSeqNBPVolChain() error {
-	const batch, benchIters, lr = 1, defaultGoBenchIters, 1e-2
+	const batch, lr = 1, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volSeqCfg()
 	W0 := randInit(1, cfg.WeightCount(), 0x53515633)
 	W1 := randInit(1, cfg.WeightCount(), 0x53515634)
@@ -640,7 +642,8 @@ func caseSeqNBPVol111AllDTypes() error {
 }
 
 func caseSeqNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volSeqCfg()

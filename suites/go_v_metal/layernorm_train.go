@@ -283,7 +283,7 @@ func compareLayerNormNBP(goO, mtlO lnbpLeafOut, requireExact bool) error {
 			return fmt.Errorf("%s: %s", c.name, suites.FormatSpectrum(m))
 		}
 	}
-	if !lossWithin1Ulp(goO.loss, mtlO.loss) {
+	if !metalLossWithinBand(goO.loss, mtlO.loss) {
 		rel := math.Abs(goO.loss-mtlO.loss) / math.Max(1e-30, math.Abs(goO.loss))
 		if requireExact || rel > 1e-5 {
 			return fmt.Errorf("loss go=%g mtl=%g", goO.loss, mtlO.loss)
@@ -293,7 +293,7 @@ func compareLayerNormNBP(goO, mtlO lnbpLeafOut, requireExact bool) error {
 }
 
 func caseLayerNormNBPLeafF32() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	fc := lnbpLeaf{
 		batch: 2, seq: 1, dim: 4, eps: 0,
 		dtype:  core.DTypeFloat32,
@@ -333,7 +333,8 @@ func caseLayerNormNBPLeafF32() error {
 }
 
 func caseLayerNormNBPLeafAllDTypes() error {
-	const dim, batch, seq, benchIters = 8, 2, 1, defaultGoBenchIters
+	const dim, batch, seq = 8, 2, 1
+	var benchIters = defaultGoBenchIters
 	gamma, beta, x := makeLNAffineInit(dim, batch)
 	target := make([]float32, batch*dim)
 	for i := range target {
@@ -651,7 +652,8 @@ func benchLayerNormVolNBP(depth, rows, cols, lpc, batch int, cells []lnVolCell, 
 }
 
 func caseLayerNormNBPVol1x1x1() error {
-	const batch, dim, benchIters = 2, 4, defaultGoBenchIters
+	const batch, dim = 2, 4
+	var benchIters = defaultGoBenchIters
 	gamma := []float32{1.0, 0.9, 1.1, 0.95}
 	beta := []float32{0.01, -0.02, 0.03, -0.01}
 	x := []float32{1, 0.5, -0.5, 0.25, -1, 0.75, 0.25, -0.5}
@@ -681,7 +683,8 @@ func caseLayerNormNBPVol1x1x1() error {
 }
 
 func caseLayerNormNBPVolChain() error {
-	const batch, dim, benchIters = 1, 4, defaultGoBenchIters
+	const batch, dim = 1, 4
+	var benchIters = defaultGoBenchIters
 	g0 := []float32{1, 0.9, 1.1, 0.95}
 	b0 := []float32{0.01, -0.02, 0.03, -0.01}
 	g1 := []float32{0.8, 1.2, 1.0, 0.85}
@@ -714,7 +717,8 @@ func caseLayerNormNBPVolChain() error {
 }
 
 func caseLayerNormNBPVol111AllDTypes() error {
-	const depth, rows, cols, lpc, batch, dim, benchIters = 1, 1, 1, 1, 1, 4, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch, dim = 1, 1, 1, 1, 1, 4
+	var benchIters = defaultGoBenchIters
 	gamma, beta, x := makeLNAffineInit(dim, batch)
 	target := make([]float32, dim)
 	for i := range target {
@@ -762,7 +766,8 @@ func caseLayerNormNBPVol111AllDTypes() error {
 }
 
 func caseLayerNormNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 2, 2, 1, 1, 4, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch, dim = 2, 2, 2, 1, 1, 4
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gamma, beta, x := makeLNAffineInit(dim, batch)
 	target := make([]float32, dim)
@@ -797,7 +802,8 @@ func caseLayerNormNBPVol222F32() error {
 }
 
 func caseLayerNormNBPVol211AllDTypes() error {
-	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 1, 1, 1, 1, 4, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch, dim = 2, 1, 1, 1, 1, 4
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gamma, beta, x := makeLNAffineInit(dim, batch)
 	target := make([]float32, dim)

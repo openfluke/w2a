@@ -269,7 +269,7 @@ func compareRMSNormNBP(goO, mtlO rnbpLeafOut, requireExact bool) error {
 			return fmt.Errorf("%s: %s", c.name, suites.FormatSpectrum(m))
 		}
 	}
-	if !lossWithin1Ulp(goO.loss, mtlO.loss) {
+	if !metalLossWithinBand(goO.loss, mtlO.loss) {
 		rel := math.Abs(goO.loss-mtlO.loss) / math.Max(1e-30, math.Abs(goO.loss))
 		if requireExact || rel > 1e-5 {
 			return fmt.Errorf("loss go=%g mtl=%g", goO.loss, mtlO.loss)
@@ -279,7 +279,7 @@ func compareRMSNormNBP(goO, mtlO rnbpLeafOut, requireExact bool) error {
 }
 
 func caseRMSNormNBPLeafF32() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	fc := rnbpLeaf{
 		batch: 2, seq: 1, dim: 4, eps: 0,
 		dtype:  core.DTypeFloat32,
@@ -318,7 +318,8 @@ func caseRMSNormNBPLeafF32() error {
 }
 
 func caseRMSNormNBPLeafAllDTypes() error {
-	const dim, batch, seq, benchIters = 8, 2, 1, defaultGoBenchIters
+	const dim, batch, seq = 8, 2, 1
+	var benchIters = defaultGoBenchIters
 	gamma, x := makeRMSGammaInit(dim, batch)
 	target := make([]float32, batch*dim)
 	for i := range target {
@@ -621,7 +622,8 @@ func benchRMSNormVolNBP(depth, rows, cols, lpc, batch int, cells []rnVolCell, x,
 }
 
 func caseRMSNormNBPVol1x1x1() error {
-	const batch, dim, benchIters = 2, 4, defaultGoBenchIters
+	const batch, dim = 2, 4
+	var benchIters = defaultGoBenchIters
 	gamma := []float32{1.0, 0.9, 1.1, 0.95}
 	x := []float32{1, 0.5, -0.5, 0.25, -1, 0.75, 0.25, -0.5}
 	target := []float32{0.1, 0.2, 0.3, 0.4, 0.15, 0.25, 0.35, 0.45}
@@ -650,7 +652,8 @@ func caseRMSNormNBPVol1x1x1() error {
 }
 
 func caseRMSNormNBPVolChain() error {
-	const batch, dim, benchIters = 1, 4, defaultGoBenchIters
+	const batch, dim = 1, 4
+	var benchIters = defaultGoBenchIters
 	g0 := []float32{1, 0.9, 1.1, 0.95}
 	g1 := []float32{0.8, 1.2, 1.0, 0.85}
 	cells := []rnVolCell{
@@ -681,7 +684,8 @@ func caseRMSNormNBPVolChain() error {
 }
 
 func caseRMSNormNBPVol111AllDTypes() error {
-	const depth, rows, cols, lpc, batch, dim, benchIters = 1, 1, 1, 1, 1, 4, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch, dim = 1, 1, 1, 1, 1, 4
+	var benchIters = defaultGoBenchIters
 	gamma, x := makeRMSGammaInit(dim, batch)
 	target := make([]float32, dim)
 	for i := range target {
@@ -728,7 +732,8 @@ func caseRMSNormNBPVol111AllDTypes() error {
 }
 
 func caseRMSNormNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 2, 2, 1, 1, 4, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch, dim = 2, 2, 2, 1, 1, 4
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gamma, x := makeRMSGammaInit(dim, batch)
 	target := make([]float32, dim)
@@ -763,7 +768,8 @@ func caseRMSNormNBPVol222F32() error {
 }
 
 func caseRMSNormNBPVol211AllDTypes() error {
-	const depth, rows, cols, lpc, batch, dim, benchIters = 2, 1, 1, 1, 1, 4, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch, dim = 2, 1, 1, 1, 1, 4
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gamma, x := makeRMSGammaInit(dim, batch)
 	target := make([]float32, dim)

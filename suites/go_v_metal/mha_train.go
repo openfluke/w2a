@@ -297,7 +297,7 @@ func compareMHANBP(goO, mtlO mhbpLeafOut, requireExact bool) error {
 			return fmt.Errorf("%s: %s", c.name, suites.FormatSpectrum(m))
 		}
 	}
-	if !lossWithin1Ulp(goO.loss, mtlO.loss) {
+	if !metalLossWithinBand(goO.loss, mtlO.loss) {
 		rel := math.Abs(goO.loss-mtlO.loss) / math.Max(1e-30, math.Abs(goO.loss))
 		if requireExact || rel > 1e-5 {
 			return fmt.Errorf("loss go=%g metal=%g", goO.loss, mtlO.loss)
@@ -307,7 +307,7 @@ func compareMHANBP(goO, mtlO mhbpLeafOut, requireExact bool) error {
 }
 
 func caseMHANBPLeafF32() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := mha.DecoderCausal(32, 4, 4)
 	cfg.MaxSeqLen = 16
 	fc, err := makeMHANBPCase(cfg, 1, 4, core.DTypeFloat32, 0x4d484250, 1e-2)
@@ -385,7 +385,7 @@ func caseMHANBPLeafVariants() error {
 }
 
 func caseMHANBPLeafAllDTypes() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := mha.DecoderCausal(32, 4, 4)
 	cfg.MaxSeqLen = 16
 	var fails []string
@@ -461,9 +461,9 @@ func caseMHANBPLeafAllDTypes() error {
 }
 
 type mhVolCell struct {
-	enabled bool
-	cfg     mha.Config
-	dtype   core.DType
+	enabled    bool
+	cfg        mha.Config
+	dtype      core.DType
 	q, k, v, o []float32
 }
 
@@ -733,7 +733,8 @@ func makeMHVolCell(cfg mha.Config, dt core.DType, seed uint32) (mhVolCell, error
 }
 
 func caseMHANBPVol1x1x1() error {
-	const batch, seq, benchIters = 1, 4, defaultGoBenchIters
+	const batch, seq = 1, 4
+	var benchIters = defaultGoBenchIters
 	cfg := mha.DecoderCausal(16, 2, 2)
 	cfg.MaxSeqLen = 16
 	cell, err := makeMHVolCell(cfg, core.DTypeFloat32, 0x4d485631)
@@ -768,7 +769,8 @@ func caseMHANBPVol1x1x1() error {
 }
 
 func caseMHANBPVolChain() error {
-	const batch, seq, benchIters = 1, 3, defaultGoBenchIters
+	const batch, seq = 1, 3
+	var benchIters = defaultGoBenchIters
 	cfg := mha.DecoderCausal(16, 2, 2)
 	cfg.MaxSeqLen = 16
 	c0, err := makeMHVolCell(cfg, core.DTypeFloat32, 0x4d485633)
@@ -870,7 +872,8 @@ func scaleMHA(q, k, v, o, x []float32, s float32) {
 }
 
 func caseMHANBPVol222F32() error {
-	const batch, seq, benchIters = 1, 2, defaultGoBenchIters
+	const batch, seq = 1, 2
+	var benchIters = defaultGoBenchIters
 	cfg := mha.DecoderCausal(16, 2, 2)
 	cfg.MaxSeqLen = 32
 	x := randInit(batch*seq, cfg.DModel, 0x4d485638)

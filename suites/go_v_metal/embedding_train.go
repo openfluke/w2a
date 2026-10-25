@@ -268,7 +268,7 @@ func compareEmbeddingNBP(goO, mtlO embpLeafOut, requireExact bool) error {
 			return fmt.Errorf("%s: %s", c.name, suites.FormatSpectrum(m))
 		}
 	}
-	if !lossWithin1Ulp(goO.loss, mtlO.loss) {
+	if !metalLossWithinBand(goO.loss, mtlO.loss) {
 		rel := math.Abs(goO.loss-mtlO.loss) / math.Max(1e-30, math.Abs(goO.loss))
 		if requireExact || rel > 1e-5 {
 			return fmt.Errorf("loss go=%g mtl=%g", goO.loss, mtlO.loss)
@@ -278,7 +278,7 @@ func compareEmbeddingNBP(goO, mtlO embpLeafOut, requireExact bool) error {
 }
 
 func caseEmbeddingNBPLeafF32() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	vocab, emb, batch, seq := 16, 8, 2, 4
 	W, x := makeEmbeddingTrainInit(vocab, emb, batch, seq, 0x454d4250)
 	target := make([]float32, batch*seq*emb)
@@ -320,7 +320,7 @@ func caseEmbeddingNBPLeafF32() error {
 }
 
 func caseEmbeddingNBPLeafAllDTypes() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	vocab, emb, batch, seq := 12, 6, 2, 3
 	W, x := makeEmbeddingTrainInit(vocab, emb, batch, seq, 0x454d4434)
 	target := make([]float32, batch*seq*emb)
@@ -629,7 +629,8 @@ func benchEmbeddingVolNBP(depth, rows, cols, lpc, batch int, cells []embVolCell,
 }
 
 func caseEmbeddingNBPVol1x1x1() error {
-	const batch, vocab, emb, seq, benchIters = 2, 8, 4, 3, defaultGoBenchIters
+	const batch, vocab, emb, seq = 2, 8, 4, 3
+	var benchIters = defaultGoBenchIters
 	W, x := makeEmbeddingTrainInit(vocab, emb, batch, seq, 0x454d5631)
 	target := make([]float32, batch*seq*emb)
 	for i := range target {
@@ -661,7 +662,8 @@ func caseEmbeddingNBPVol1x1x1() error {
 }
 
 func caseEmbeddingNBPVolChain() error {
-	const batch, vocab, emb, seq, benchIters = 1, 8, 4, 3, defaultGoBenchIters
+	const batch, vocab, emb, seq = 1, 8, 4, 3
+	var benchIters = defaultGoBenchIters
 	W0, x := makeEmbeddingTrainInit(vocab, emb, batch, seq, 0x454d5633)
 	W1, _ := makeEmbeddingTrainInit(vocab, emb, batch, seq, 0x454d5634)
 	target := make([]float32, batch*seq*emb)
@@ -735,7 +737,8 @@ func caseEmbeddingNBPVol111AllDTypes() error {
 }
 
 func caseEmbeddingNBPVol222F32() error {
-	const batch, vocab, emb, seq, benchIters = 1, 8, 4, 2, defaultGoBenchIters
+	const batch, vocab, emb, seq = 1, 8, 4, 2
+	var benchIters = defaultGoBenchIters
 	x := tokenIDs(batch*seq, vocab, 0x454d5637)
 	target := make([]float32, batch*seq*emb)
 	for i := range target {

@@ -459,7 +459,7 @@ func makeConvTLeafCase(tier, batch int, dt core.DType, seed uint32, smoke bool) 
 }
 
 func caseConvTNBPLeafF32(tier int) error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	batch := 1
 	if tier == 1 {
 		batch = 2
@@ -498,7 +498,7 @@ func caseConvTNBPLeafF32(tier int) error {
 }
 
 func caseConvTNBPLeafAllDTypes(tier int) error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	batch := 1
 	var fails []string
 	worst := suites.DetExactBit
@@ -1109,7 +1109,8 @@ func benchConvT3VolNBP(depth, rows, cols, lpc, batch int, cells []convt3VolCell,
 }
 
 func caseConvTNBPVol111F32(tier int) error {
-	const batch, benchIters = 1, defaultGoBenchIters
+	const batch = 1
+	var benchIters = defaultGoBenchIters
 	const lr = 1e-2
 	switch tier {
 	case 1:
@@ -1220,7 +1221,8 @@ func caseConvTNBPVol111F32(tier int) error {
 }
 
 func caseConvTNBPVolChain(tier int) error {
-	const batch, benchIters = 1, defaultGoBenchIters
+	const batch = 1
+	var benchIters = defaultGoBenchIters
 	const lr = 1e-2
 	switch tier {
 	case 1:
@@ -1322,7 +1324,8 @@ func caseConvTNBPVolChain(tier int) error {
 }
 
 func caseConvTNBPVol111AllDTypes(tier int) error {
-	const batch, benchIters = 1, defaultGoBenchIters
+	const batch = 1
+	var benchIters = defaultGoBenchIters
 	var fails []string
 	fmt.Printf("\n      ConvT%d NBP vol 1×1×1×1 ×34\n", tier)
 	fmt.Printf("      %-12s %-12s %8s %10s %10s %9s %s\n",
@@ -1446,7 +1449,8 @@ func caseConvTNBPVol111AllDTypes(tier int) error {
 }
 
 func caseConvTNBPVol222F32(tier int) error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	switch tier {
@@ -1567,7 +1571,8 @@ func caseConvTNBPVol222F32(tier int) error {
 }
 
 func caseConvTNBPVol211AllDTypes(tier int) error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 1, 1, 1, 1, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch = 2, 1, 1, 1, 1
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	var fails []string
 	fmt.Printf("\n      ConvT%d NBP vol 2×1×1×1 ×34\n", tier)

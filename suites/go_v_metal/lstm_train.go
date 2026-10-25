@@ -263,7 +263,7 @@ func makeLSTMLeafCase(cfg lstm.Config, batch int, dt core.DType, seed uint32) (l
 }
 
 func caseLSTMNBPLeafF32() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := smokeLSTMCfg()
 	fc, err := makeLSTMLeafCase(cfg, 2, core.DTypeFloat32, 0x4c534250)
 	if err != nil {
@@ -299,7 +299,7 @@ func caseLSTMNBPLeafF32() error {
 }
 
 func caseLSTMNBPLeafAllDTypes() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := smokeLSTMCfg()
 	var fails []string
 	worst := suites.DetExactBit
@@ -537,7 +537,8 @@ func makeLSTMVolCell(cfg lstm.Config, dt core.DType, seed uint32) lstmVolCell {
 }
 
 func caseLSTMNBPVol1x1x1() error {
-	const batch, benchIters, lr = 2, defaultGoBenchIters, 1e-2
+	const batch, lr = 2, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volLSTMCfg()
 	W := randInit(1, cfg.WeightCount(), 0x4c535631)
 	cells := []lstmVolCell{{
@@ -571,7 +572,8 @@ func caseLSTMNBPVol1x1x1() error {
 }
 
 func caseLSTMNBPVolChain() error {
-	const batch, benchIters, lr = 1, defaultGoBenchIters, 1e-2
+	const batch, lr = 1, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volLSTMCfg()
 	W0 := randInit(1, cfg.WeightCount(), 0x4c535633)
 	W1 := randInit(1, cfg.WeightCount(), 0x4c535634)
@@ -646,7 +648,8 @@ func caseLSTMNBPVol111AllDTypes() error {
 }
 
 func caseLSTMNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volLSTMCfg()

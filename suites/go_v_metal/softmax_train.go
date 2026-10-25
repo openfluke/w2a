@@ -281,7 +281,7 @@ func compareSoftmaxNBP(goO, mtlO smbpLeafOut, _ bool) error {
 			return fmt.Errorf("%s: %s", c.name, suites.FormatSpectrum(m))
 		}
 	}
-	if !lossWithin1Ulp(goO.loss, mtlO.loss) {
+	if !metalLossWithinBand(goO.loss, mtlO.loss) {
 		rel := math.Abs(goO.loss-mtlO.loss) / math.Max(1e-30, math.Abs(goO.loss))
 		if rel > 1e-5 {
 			return fmt.Errorf("loss go=%g mtl=%g", goO.loss, mtlO.loss)
@@ -291,7 +291,7 @@ func compareSoftmaxNBP(goO, mtlO smbpLeafOut, _ bool) error {
 }
 
 func compareSoftmaxVolNBP(goO, mtlO nbpVolOut) error {
-	if !lossWithin1Ulp(goO.loss, mtlO.loss) {
+	if !metalLossWithinBand(goO.loss, mtlO.loss) {
 		rel := math.Abs(goO.loss-mtlO.loss) / math.Max(1e-30, math.Abs(goO.loss))
 		if rel > 1e-5 {
 			return fmt.Errorf("loss go=%g mtl=%g", goO.loss, mtlO.loss)
@@ -328,7 +328,7 @@ func makeSoftmaxNBPTarget(n int, seed uint32) []float32 {
 }
 
 func caseSoftmaxNBPLeafStandard() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := softmax.Config{Dim: 8, SeqLen: 2, Kind: softmax.KindStandard, Temperature: 1}
 	x := smbpRandInit(2, 8, 0x534d4250)
 	fc := smbpLeaf{
@@ -424,7 +424,7 @@ func caseSoftmaxNBPLeafAllKinds() error {
 }
 
 func caseSoftmaxNBPLeafAllDTypes() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := softmax.Config{Dim: 8, SeqLen: 2, Kind: softmax.KindStandard, Temperature: 1}
 	x := smbpRandInit(2, 8, 0x534d4434)
 	target := makeSoftmaxNBPTarget(16, 0x534d4435)
@@ -488,7 +488,7 @@ func caseSoftmaxNBPLeafAllDTypes() error {
 }
 
 func caseSoftmaxNBPLeafAllKindsAllDTypes() error {
-	const benchIters = 10
+	var benchIters = 10
 	var allFails []string
 	worstBand := suites.DetExactBit
 	for _, fx := range softmaxNBPKindFixtures() {
@@ -772,7 +772,8 @@ func benchSoftmaxVolNBP(depth, rows, cols, lpc, batch int, cells []smVolCell, x,
 }
 
 func caseSoftmaxNBPVol1x1x1() error {
-	const batch, dim, benchIters = 2, 4, defaultGoBenchIters
+	const batch, dim = 2, 4
+	var benchIters = defaultGoBenchIters
 	cfg := softmax.Config{Dim: dim, SeqLen: 1, Kind: softmax.KindStandard, Temperature: 1}
 	x := smbpRandInit(batch, dim, 0x534d5631)
 	target := makeSoftmaxNBPTarget(batch*dim, 0x534d5632)
@@ -801,7 +802,8 @@ func caseSoftmaxNBPVol1x1x1() error {
 }
 
 func caseSoftmaxNBPVolChain() error {
-	const batch, dim, benchIters = 1, 4, defaultGoBenchIters
+	const batch, dim = 1, 4
+	var benchIters = defaultGoBenchIters
 	cfg := softmax.Config{Dim: dim, SeqLen: 1, Kind: softmax.KindStandard, Temperature: 1}
 	x := smbpRandInit(batch, dim, 0x534d5633)
 	target := makeSoftmaxNBPTarget(batch*dim, 0x534d5634)
@@ -867,7 +869,8 @@ func caseSoftmaxNBPVol111AllDTypes() error {
 }
 
 func caseSoftmaxNBPVol222F32() error {
-	const batch, dim, benchIters = 1, 4, defaultGoBenchIters
+	const batch, dim = 1, 4
+	var benchIters = defaultGoBenchIters
 	// scale logits so chained Softmax stays numerically calm
 	x := smbpRandInit(batch, dim, 0x534d5637)
 	for i := range x {

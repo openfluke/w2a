@@ -65,10 +65,10 @@ type reNBPLeaf struct {
 }
 
 type reVolCell struct {
-	enabled      bool
+	enabled         bool
 	dim, seq, depth int
-	dtype        core.DType
-	W            []float32
+	dtype           core.DType
+	W               []float32
 }
 
 func smokeReCfg() residual.Config {
@@ -248,7 +248,7 @@ func makeReLeafCase(cfg residual.Config, batch, seq int, dt core.DType, seed uin
 }
 
 func caseReNBPLeafF32() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := smokeReCfg()
 	fc, err := makeReLeafCase(cfg, 2, cfg.SeqLen, core.DTypeFloat32, 0x52454250)
 	if err != nil {
@@ -284,7 +284,7 @@ func caseReNBPLeafF32() error {
 }
 
 func caseReNBPLeafAllDTypes() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := smokeReCfg()
 	var fails []string
 	worst := suites.DetExactBit
@@ -531,7 +531,8 @@ func makeReVolCell(cfg residual.Config, dt core.DType, seed uint32) reVolCell {
 }
 
 func caseReNBPVol1x1x1() error {
-	const batch, benchIters, lr = 2, defaultGoBenchIters, 1e-2
+	const batch, lr = 2, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volReCfg()
 	W := randInit(1, cfg.WeightCount(), 0x52455631)
 	cells := []reVolCell{{
@@ -565,7 +566,8 @@ func caseReNBPVol1x1x1() error {
 }
 
 func caseReNBPVolChain() error {
-	const batch, benchIters, lr = 1, defaultGoBenchIters, 1e-2
+	const batch, lr = 1, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volReCfg()
 	W0 := randInit(1, cfg.WeightCount(), 0x52455633)
 	W1 := randInit(1, cfg.WeightCount(), 0x52455634)
@@ -640,7 +642,8 @@ func caseReNBPVol111AllDTypes() error {
 }
 
 func caseReNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volReCfg()

@@ -55,20 +55,20 @@ func RunRNNTrain() error {
 }
 
 type rnnNBPLeaf struct {
-	batch int
-	cfg   rnn.Config
-	dtype core.DType
-	W     []float32
-	x     []float32
+	batch  int
+	cfg    rnn.Config
+	dtype  core.DType
+	W      []float32
+	x      []float32
 	target []float32
-	lr    float64
+	lr     float64
 }
 
 type rnnVolCell struct {
-	enabled bool
+	enabled      bool
 	in, hid, seq int
-	dtype   core.DType
-	W       []float32
+	dtype        core.DType
+	W            []float32
 }
 
 func smokeRNNCfg() rnn.Config {
@@ -301,7 +301,7 @@ func makeRNNLeafCase(cfg rnn.Config, batch int, dt core.DType, seed uint32) (rnn
 }
 
 func caseRNNNBPLeafF32() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := smokeRNNCfg()
 	fc, err := makeRNNLeafCase(cfg, 2, core.DTypeFloat32, 0x524e4250)
 	if err != nil {
@@ -337,7 +337,7 @@ func caseRNNNBPLeafF32() error {
 }
 
 func caseRNNNBPLeafAllDTypes() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := smokeRNNCfg()
 	var fails []string
 	worst := suites.DetExactBit
@@ -642,7 +642,8 @@ func makeRNNVolCell(cfg rnn.Config, dt core.DType, seed uint32) rnnVolCell {
 }
 
 func caseRNNNBPVol1x1x1() error {
-	const batch, benchIters, lr = 2, defaultGoBenchIters, 1e-2
+	const batch, lr = 2, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volRNNCfg()
 	W := randInit(1, cfg.WeightCount(), 0x524e5631)
 	cells := []rnnVolCell{{
@@ -676,7 +677,8 @@ func caseRNNNBPVol1x1x1() error {
 }
 
 func caseRNNNBPVolChain() error {
-	const batch, benchIters, lr = 1, defaultGoBenchIters, 1e-2
+	const batch, lr = 1, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volRNNCfg()
 	W0 := randInit(1, cfg.WeightCount(), 0x524e5633)
 	W1 := randInit(1, cfg.WeightCount(), 0x524e5634)
@@ -751,7 +753,8 @@ func caseRNNNBPVol111AllDTypes() error {
 }
 
 func caseRNNNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volRNNCfg()

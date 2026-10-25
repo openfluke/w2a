@@ -237,7 +237,7 @@ func makeMcLeafCase(cfg metacognition.Config, batch, seq int, dt core.DType, see
 }
 
 func caseMcNBPLeafF32() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := smokeMcCfg()
 	fc, err := makeMcLeafCase(cfg, 2, cfg.SeqLen, core.DTypeFloat32, 0x4d434250)
 	if err != nil {
@@ -273,7 +273,7 @@ func caseMcNBPLeafF32() error {
 }
 
 func caseMcNBPLeafAllDTypes() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	cfg := smokeMcCfg()
 	var fails []string
 	worst := suites.DetExactBit
@@ -518,7 +518,8 @@ func makeMcVolCell(cfg metacognition.Config, dt core.DType, seed uint32) mcVolCe
 }
 
 func caseMcNBPVol1x1x1() error {
-	const batch, benchIters, lr = 2, defaultGoBenchIters, 1e-2
+	const batch, lr = 2, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volMcCfg()
 	W := randInit(1, mcWeightCount(cfg), 0x4d435631)
 	cells := []mcVolCell{{
@@ -552,7 +553,8 @@ func caseMcNBPVol1x1x1() error {
 }
 
 func caseMcNBPVolChain() error {
-	const batch, benchIters, lr = 1, defaultGoBenchIters, 1e-2
+	const batch, lr = 1, 1e-2
+	var benchIters = defaultGoBenchIters
 	cfg := volMcCfg()
 	W0 := randInit(1, mcWeightCount(cfg), 0x4d435633)
 	W1 := randInit(1, mcWeightCount(cfg), 0x4d435634)
@@ -627,7 +629,8 @@ func caseMcNBPVol111AllDTypes() error {
 }
 
 func caseMcNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	cfg := volMcCfg()

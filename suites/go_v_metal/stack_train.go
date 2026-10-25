@@ -297,7 +297,7 @@ func makeStLeafCase(dim, nChildren, batch, seq int, dt core.DType, seed uint32) 
 }
 
 func caseStNBPLeafF32() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	dim, nChildren, seq := smokeStCfg()
 	fc, err := makeStLeafCase(dim, nChildren, 2, seq, core.DTypeFloat32, 0x53544b42)
 	if err != nil {
@@ -333,7 +333,7 @@ func caseStNBPLeafF32() error {
 }
 
 func caseStNBPLeafAllDTypes() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	dim, nChildren, seq := smokeStCfg()
 	var fails []string
 	worst := suites.DetExactBit
@@ -575,7 +575,8 @@ func makeStVolCell(dim, nChildren, seq int, dt core.DType, seed uint32) stVolCel
 }
 
 func caseStNBPVol1x1x1() error {
-	const batch, benchIters, lr = 2, defaultGoBenchIters, 1e-2
+	const batch, lr = 2, 1e-2
+	var benchIters = defaultGoBenchIters
 	dim, nChildren, seq := volStCfg()
 	W := randInit(1, stWeightCount(dim, nChildren), 0x53545631)
 	cells := []stVolCell{{
@@ -609,7 +610,8 @@ func caseStNBPVol1x1x1() error {
 }
 
 func caseStNBPVolChain() error {
-	const batch, benchIters, lr = 1, defaultGoBenchIters, 1e-2
+	const batch, lr = 1, 1e-2
+	var benchIters = defaultGoBenchIters
 	dim, nChildren, seq := volStCfg()
 	W0 := randInit(1, stWeightCount(dim, nChildren), 0x53545633)
 	W1 := randInit(1, stWeightCount(dim, nChildren), 0x53545634)
@@ -684,7 +686,8 @@ func caseStNBPVol111AllDTypes() error {
 }
 
 func caseStNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, benchIters = 2, 2, 2, 1, 1, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch = 2, 2, 2, 1, 1
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	const lr = 1e-2
 	dim, nChildren, seq := volStCfg()
@@ -770,7 +773,7 @@ func caseStNBPVol211AllDTypes() error {
 		// require exact_bit on loss/gradIn/W; treat post as exact when max|Δ|≤1e-18.
 		if err := compareVolNBP(goO, mtlO, true); err != nil {
 			mPost := suites.CompareF32Spectrum(goO.post, mtlO.post)
-			if mPost.MaxAbs <= 1e-18 && lossWithin1Ulp(goO.loss, mtlO.loss) {
+			if mPost.MaxAbs <= 1e-18 && metalLossWithinBand(goO.loss, mtlO.loss) {
 				mGin := suites.CompareF32Spectrum(goO.gradIn, mtlO.gradIn)
 				okW := true
 				for i := range goO.Ws {

@@ -287,7 +287,7 @@ func compareSwiGLUNBP(goO, mtlO sgbpLeafOut, requireExact bool) error {
 			return fmt.Errorf("%s: %s", c.name, suites.FormatSpectrum(m))
 		}
 	}
-	if !lossWithin1Ulp(goO.loss, mtlO.loss) {
+	if !metalLossWithinBand(goO.loss, mtlO.loss) {
 		rel := math.Abs(goO.loss-mtlO.loss) / math.Max(1e-30, math.Abs(goO.loss))
 		if requireExact || rel > 1e-5 {
 			return fmt.Errorf("loss go=%g mtl=%g", goO.loss, mtlO.loss)
@@ -297,7 +297,7 @@ func compareSwiGLUNBP(goO, mtlO sgbpLeafOut, requireExact bool) error {
 }
 
 func caseSwiGLUNBPLeafF32() error {
-	const benchIters = defaultGoBenchIters
+	var benchIters = defaultGoBenchIters
 	in, inter, batch := 8, 16, 2
 	gate, up, down, x := makeSwiGLUTrainInit(in, inter, batch, 0x53574910)
 	target := make([]float32, batch*in)
@@ -338,7 +338,8 @@ func caseSwiGLUNBPLeafF32() error {
 }
 
 func caseSwiGLUNBPLeafAllDTypes() error {
-	const in, inter, batch, seq, benchIters = 8, 16, 2, 1, defaultGoBenchIters
+	const in, inter, batch, seq = 8, 16, 2, 1
+	var benchIters = defaultGoBenchIters
 	gate, up, down, x := makeSwiGLUTrainInit(in, inter, batch, 0x53574911)
 	target := make([]float32, batch*in)
 	for i := range target {
@@ -667,7 +668,8 @@ func scaleSwiGLU(gate, up, down, x []float32, s float32) {
 }
 
 func caseSwiGLUNBPVol1x1x1() error {
-	const batch, in, inter, benchIters = 2, 4, 8, defaultGoBenchIters
+	const batch, in, inter = 2, 4, 8
+	var benchIters = defaultGoBenchIters
 	gate, up, down, x := makeSwiGLUTrainInit(in, inter, batch, 0x53574920)
 	target := make([]float32, batch*in)
 	for i := range target {
@@ -699,7 +701,8 @@ func caseSwiGLUNBPVol1x1x1() error {
 }
 
 func caseSwiGLUNBPVolChain() error {
-	const batch, in, inter, benchIters = 1, 4, 8, defaultGoBenchIters
+	const batch, in, inter = 1, 4, 8
+	var benchIters = defaultGoBenchIters
 	g0, u0, d0, x := makeSwiGLUTrainInit(in, inter, batch, 0x53574921)
 	g1, u1, d1, _ := makeSwiGLUTrainInit(in, inter, batch, 0x53574922)
 	cells := []sgVolCell{
@@ -732,7 +735,8 @@ func caseSwiGLUNBPVolChain() error {
 }
 
 func caseSwiGLUNBPVol111AllDTypes() error {
-	const depth, rows, cols, lpc, batch, in, inter, benchIters = 1, 1, 1, 1, 1, 4, 8, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch, in, inter = 1, 1, 1, 1, 1, 4, 8
+	var benchIters = defaultGoBenchIters
 	gate, up, down, x := makeSwiGLUTrainInit(in, inter, batch, 0x53574923)
 	target := make([]float32, in)
 	for i := range target {
@@ -781,7 +785,8 @@ func caseSwiGLUNBPVol111AllDTypes() error {
 }
 
 func caseSwiGLUNBPVol222F32() error {
-	const depth, rows, cols, lpc, batch, in, inter, benchIters = 2, 2, 2, 1, 1, 4, 8, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch, in, inter = 2, 2, 2, 1, 1, 4, 8
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gate, up, down, x := makeSwiGLUTrainInit(in, inter, batch, 0x53574924)
 	scaleSwiGLU(gate, up, down, x, 0.05)
@@ -818,7 +823,8 @@ func caseSwiGLUNBPVol222F32() error {
 }
 
 func caseSwiGLUNBPVol211AllDTypes() error {
-	const depth, rows, cols, lpc, batch, in, inter, benchIters = 2, 1, 1, 1, 1, 4, 8, defaultGoBenchIters
+	const depth, rows, cols, lpc, batch, in, inter = 2, 1, 1, 1, 1, 4, 8
+	var benchIters = defaultGoBenchIters
 	stack := depth * rows * cols * lpc
 	gate, up, down, x := makeSwiGLUTrainInit(in, inter, batch, 0x53574925)
 	scaleSwiGLU(gate, up, down, x, 0.05)

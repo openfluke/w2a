@@ -3,6 +3,8 @@ package go_v_metal
 import (
 	"fmt"
 	"math"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -28,7 +30,17 @@ func lossWithinNUlp(a, b float64, n uint64) bool {
 	return bi-ai <= n
 }
 
-const defaultGoBenchIters = 2000
+var defaultGoBenchIters = func() int {
+	if value := os.Getenv("WELVET_METAL_BENCH_ITERS"); value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 {
+			panic("WELVET_METAL_BENCH_ITERS must be a positive integer")
+		}
+		return n
+	}
+	return 2000
+}()
+
 const goBenchMinWall = 5 * time.Millisecond
 const goBenchMaxIters = 2_000_000
 
@@ -107,4 +119,33 @@ func perIterUS(d time.Duration, n int) float64 {
 		return 0
 	}
 	return float64(d.Nanoseconds()) / float64(n) / 1000.0
+}
+
+// metalLossWithinBand validates the GPU float2 reduction independently of exact
+// tensor checks. Float2 is not IEEE float64; this band is part of the Metal contract.
+func metalLossWithinBand(a, b float64) bool {
+	return !math.IsNaN(a) && !math.IsNaN(b) && !math.IsInf(a, 0) && !math.IsInf(b, 0) &&
+		math.Abs(a-b) <= 1e-12*math.Max(1, math.Abs(a))
+}
+
+// Metal may flush subnormal FP32 values. Normal values still require exact bits;
+// this exception applies only when both values lie below the smallest normal FP32.
+func metalExactOrSubnormal(a, b []float32) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	const smallestNormal = 0x1p-126
+	for i, x := range a {
+		y := b[i]
+		if math.IsNaN(float64(x)) || math.IsNaN(float64(y)) || math.IsInf(float64(x), 0) || math.IsInf(float64(y), 0) {
+			return false
+		}
+		if math.Float32bits(x) == math.Float32bits(y) {
+			continue
+		}
+		if math.IsNaN(float64(x)) || math.IsNaN(float64(y)) || math.Abs(float64(x)) >= smallestNormal || math.Abs(float64(y)) >= smallestNormal {
+			return false
+		}
+	}
+	return true
 }

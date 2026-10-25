@@ -13,7 +13,11 @@ import (
 	"github.com/openfluke/welvet/architecture"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/cnn1"
+	"github.com/openfluke/welvet/layers/cnn2"
+	"github.com/openfluke/welvet/layers/cnn3"
 	"github.com/openfluke/welvet/layers/convt1"
+	"github.com/openfluke/welvet/layers/convt2"
+	"github.com/openfluke/welvet/layers/convt3"
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/layers/embedding"
 	"github.com/openfluke/welvet/layers/gdn"
@@ -57,6 +61,33 @@ func CasesStepBPTrain() []Case {
 		{Name: "Mamba StepBP 1-hop × all 34 dtypes — spectrum", Run: caseMambaStepBPAllDTypes},
 		{Name: "Metacognition StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseMetacognitionStepBPF32},
 		{Name: "Metacognition StepBP 1-hop × all 34 dtypes — spectrum", Run: caseMetacognitionStepBPAllDTypes},
+		{Name: "CNN2 StepBP rank 4 × all 34 dtypes", Run: func() error { return runStepBPSpectrum("CNN2", buildCNN2StepBP) }},
+		{Name: "CNN3 StepBP rank 5 × all 34 dtypes", Run: func() error { return runStepBPSpectrum("CNN3", buildCNN3StepBP) }},
+		{Name: "ConvT2 StepBP rank 4 × all 34 dtypes", Run: func() error { return runStepBPSpectrum("ConvT2", buildConvT2StepBP) }},
+		{Name: "ConvT3 StepBP rank 5 × all 34 dtypes", Run: func() error { return runStepBPSpectrum("ConvT3", buildConvT3StepBP) }},
+		{Name: "Dense ModeMeshBP volume 211 × all 34 dtypes", Run: caseDenseNBPVol211AllDTypes},
+		{Name: "RMSNorm ModeMeshBP volume 211 × all 34 dtypes", Run: caseRMSNormNBPVol211AllDTypes},
+		{Name: "LayerNorm ModeMeshBP volume 211 × all 34 dtypes", Run: caseLayerNormNBPVol211AllDTypes},
+		{Name: "SwiGLU ModeMeshBP volume 211 × all 34 dtypes", Run: caseSwiGLUNBPVol211AllDTypes},
+		{Name: "Softmax ModeMeshBP volume 211 × all 34 dtypes", Run: caseSoftmaxNBPVol211AllDTypes},
+		{Name: "Embedding ModeMeshBP volume 211 × all 34 dtypes", Run: caseEmbeddingNBPVol211AllDTypes},
+		{Name: "MHA ModeMeshBP volume 211 × all 34 dtypes", Run: caseMHANBPVol211AllDTypes},
+		{Name: "RNN ModeMeshBP volume 211 × all 34 dtypes", Run: caseRNNNBPVol211AllDTypes},
+		{Name: "LSTM ModeMeshBP volume 211 × all 34 dtypes", Run: caseLSTMNBPVol211AllDTypes},
+		{Name: "Sequential ModeMeshBP volume 211 × all 34 dtypes", Run: caseSeqNBPVol211AllDTypes},
+		{Name: "Residual ModeMeshBP volume 211 × all 34 dtypes", Run: caseReNBPVol211AllDTypes},
+		{Name: "Mamba ModeMeshBP volume 211 × all 34 dtypes", Run: caseMbNBPVol211AllDTypes},
+		{Name: "Metacognition ModeMeshBP volume 211 × all 34 dtypes", Run: caseMcNBPVol211AllDTypes},
+		{Name: "NestedStack ModeMeshBP volume 211 × all 34 dtypes", Run: caseStNBPVol211AllDTypes},
+		{Name: "CNN1 ModeMeshBP volume 211 × all 34 dtypes", Run: func() error { return caseCNNNBPVol211AllDTypes(1) }},
+		{Name: "CNN2 ModeMeshBP volume 211 × all 34 dtypes", Run: func() error { return caseCNNNBPVol211AllDTypes(2) }},
+		{Name: "CNN3 ModeMeshBP volume 211 × all 34 dtypes", Run: func() error { return caseCNNNBPVol211AllDTypes(3) }},
+		{Name: "ConvT1 ModeMeshBP volume 211 × all 34 dtypes", Run: func() error { return caseConvTNBPVol211AllDTypes(1) }},
+		{Name: "ConvT2 ModeMeshBP volume 211 × all 34 dtypes", Run: func() error { return caseConvTNBPVol211AllDTypes(2) }},
+		{Name: "ConvT3 ModeMeshBP volume 211 × all 34 dtypes", Run: func() error { return caseConvTNBPVol211AllDTypes(3) }},
+		{Name: "Dense MeshBP mesh-clock 111 × all 34 dtypes", Run: func() error { return caseDenseMeshDTypes(1, 1, 1) }},
+		{Name: "Dense MeshBP mesh-clock 222 × all 34 dtypes", Run: func() error { return caseDenseMeshDTypes(2, 2, 2) }},
+		{Name: "Dense MeshBP disabled cell and remote link", Run: func() error { return denseMeshFixture(2, 2, 2, core.DTypeFloat32, true) }},
 		// KMeans StepBP deferred until kmeans.normalbp.metal (child_family_bp Gap).
 		{Name: "GDN StepBP 1-hop Float32 — ≥strict vs Go (scan FP)", Run: caseGDNStepBPF32},
 		{Name: "NestedStack StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseNestedStackStepBPF32},
@@ -229,7 +260,7 @@ func runStepBPSpectrum(label string, build func(core.DType) (stepbpOut, []byte, 
 			fmt.Printf("      %-12s %-12s %7s %10s %10s %8s  %v\n", dt, suites.DetBroken, "—", "—", "—", "—", err)
 			continue
 		}
-		_, mtlDur, err := runMetalSTB1(payload, benchIters)
+		benchO, mtlDur, err := runMetalSTB1(payload, benchIters)
 		if err != nil {
 			fails = append(fails, fmt.Sprintf("%s mtl-bench:%v", dt, err))
 			fmt.Printf("      %-12s %-12s %7s %10s %10s %8s  %v\n", dt, suites.DetBroken, "—", "—", "—", "—", err)
@@ -241,13 +272,16 @@ func runStepBPSpectrum(label string, build func(core.DType) (stepbpOut, []byte, 
 			fmt.Printf("      %-12s %-12s %7s %10s %10s %8s  %v\n", dt, suites.DetBroken, "—", "—", "—", "—", err)
 			continue
 		}
+		if err := compareStepBP(mtlO, benchO, true); err != nil {
+			fails = append(fails, fmt.Sprintf("%s benchmark reset: %v", dt, err))
+		}
 		var m suites.DetMetrics
 		if len(goO.WAfter) > 0 && len(goO.WAfter[0]) > 0 {
 			m = suites.CompareF32Spectrum(goO.WAfter[0], mtlO.WAfter[0])
 		} else {
-			// weightless (e.g. Softmax): band from loss bits
+			// Weightless Softmax uses the same finite loss contract as the assertion.
 			m = suites.DetMetrics{Band: suites.DetExactBit, ExactPct: 100}
-			if !lossWithin1Ulp(goO.loss, mtlO.loss) {
+			if !metalLossWithinBand(goO.loss, mtlO.loss) {
 				m.Band = suites.DetBroken
 				m.ExactPct = 0
 			}
@@ -1380,11 +1414,14 @@ type meshbpOut struct {
 	Ws   [][]float32
 }
 
-func encodeDenseMBP1(depth, rows, cols, lpc, batch, ticks int, cells []volCell, x, target []float32, lr float64) ([]byte, error) {
+func encodeDenseMBP1(depth, rows, cols, lpc, batch, ticks int, cells []volCell, x, target []float32, lr float64, links ...[8]int32) ([]byte, error) {
 	var in bytes.Buffer
 	_, _ = in.Write([]byte("MBP1"))
-	for _, v := range []int32{int32(depth), int32(rows), int32(cols), int32(lpc), int32(batch), 0 /*cpu*/, 0 /*n_links*/, int32(ticks)} {
+	for _, v := range []int32{int32(depth), int32(rows), int32(cols), int32(lpc), int32(batch), 0 /*cpu*/, int32(len(links)) /*n_links*/, int32(ticks)} {
 		_ = binary.Write(&in, binary.LittleEndian, v)
+	}
+	for _, link := range links {
+		_ = binary.Write(&in, binary.LittleEndian, link)
 	}
 	if len(cells) != depth*rows*cols*lpc {
 		return nil, fmt.Errorf("cells len %d != stack %d", len(cells), depth*rows*cols*lpc)
@@ -1487,10 +1524,15 @@ func runMetalMBP1(payload []byte, benchIters int) (meshbpOut, time.Duration, err
 	return z, bench, nil
 }
 
-func runGoDenseMeshBP(depth, rows, cols, lpc, batch, ticks int, cells []volCell, x, target []float32, lr float64) (meshbpOut, error) {
+func runGoDenseMeshBP(depth, rows, cols, lpc, batch, ticks int, cells []volCell, x, target []float32, lr float64, links ...[8]int32) (meshbpOut, error) {
 	var z meshbpOut
 	g := architecture.NewGrid(depth, rows, cols, lpc)
 	g.Exec.MultiCore = false
+	for _, link := range links {
+		if err := g.SetRemoteLink(int(link[0]), int(link[1]), int(link[2]), int(link[3]), int(link[4]), int(link[5]), int(link[6]), int(link[7])); err != nil {
+			return z, err
+		}
+	}
 	hops := g.HopOrder()
 	if len(cells) != len(hops) {
 		return z, fmt.Errorf("cells %d != hops %d", len(cells), len(hops))
@@ -1718,7 +1760,7 @@ func runMetacognitionStepBP(dtype core.DType, exact bool) error {
 }
 
 func caseGDNStepBPF32() error {
-	// Host f32 scan FP — same floor as GDN NormalBP (W typically strict; not exact_bit).
+	// The scan and its extended-precision reductions run entirely on Metal.
 	return runGDNStepBP(false)
 }
 
@@ -1760,6 +1802,19 @@ func runGDNStepBP(exact bool) error {
 	mtlO, _, err := runMetalSTB1(payload, 0)
 	if err != nil {
 		return fmt.Errorf("mtl: %w", err)
+	}
+	for i := range goO.WAfter {
+		m := suites.CompareF32Spectrum(goO.WAfter[i], mtlO.WAfter[i])
+		if m.Band < suites.DetStrict {
+			return fmt.Errorf("GDN W[%d] below strict: %s", i, suites.FormatSpectrum(m))
+		}
+	}
+	benchO, _, err := runMetalSTB1(payload, 2)
+	if err != nil {
+		return err
+	}
+	if err := compareStepBP(mtlO, benchO, true); err != nil {
+		return fmt.Errorf("GDN benchmark reset: %w", err)
 	}
 	return compareStepBP(goO, mtlO, exact)
 }
@@ -1866,4 +1921,290 @@ func runKMeansStepBP(dtype core.DType, exact bool) error {
 		return fmt.Errorf("mtl: %w", err)
 	}
 	return compareStepBP(goO, mtlO, exact)
+}
+
+func buildCNN2StepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
+	cfg := preservingCNN2()
+	const batch = 2
+	lr := 1e-2
+	nw := cfg.Filters * cfg.PatchDim()
+	W := randInit(1, nw, 0x53434e31)
+	xLen := batch * cfg.InChannels * cfg.Height * cfg.Width
+	x := randInit(1, xLen, 0x53434e32)
+	outHeight := cnn2.OutputSpatial(cfg.Height, cfg.Kernel, cfg.Stride, cfg.Padding)
+	outWidth := cnn2.OutputSpatial(cfg.Width, cfg.Kernel, cfg.Stride, cfg.Padding)
+
+	tgt := make([]float32, batch*cfg.Filters*outHeight*outWidth)
+	for i := range tgt {
+		tgt[i] = float32(0.04 * float64(i%6+1))
+	}
+	l, err := cnn2.NewConfigured(cfg, dtype, quant.FormatNone, W)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	l.Exec.Backend = core.BackendCPUTiled
+	l.Exec.MultiCore = false
+	st, err := parallel.NewStack(l)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, cfg.InChannels, cfg.Height, cfg.Width)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, cfg.Filters, outHeight, outWidth)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
+	if err != nil {
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	wa, err := weights.MatrixF32(st.Children[0].(*cnn2.Layer).Proj.Weights)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	goO := stepbpOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeSTB1Header(1, 1, batch, lr)
+	_ = binary.Write(buf, binary.LittleEndian, int32(9))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.InChannels))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Filters))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Height))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Width))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Kernel))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Stride))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Padding))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Activation))
+	_ = binary.Write(buf, binary.LittleEndian, int32(dtype))
+	for _, v := range W {
+		_ = binary.Write(buf, binary.LittleEndian, v)
+	}
+	writeShapesTicks(buf, []int32{batch, int32(cfg.InChannels), int32(cfg.Height), int32(cfg.Width)},
+		[]int32{batch, int32(cfg.Filters), int32(outHeight), int32(outWidth)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func buildCNN3StepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
+	cfg := preservingCNN3()
+	const batch = 2
+	lr := 1e-2
+	nw := cfg.Filters * cfg.PatchDim()
+	W := randInit(1, nw, 0x53434e31)
+	xLen := batch * cfg.InChannels * cfg.Depth * cfg.Height * cfg.Width
+	x := randInit(1, xLen, 0x53434e32)
+	outDepth := cnn3.OutputSpatial(cfg.Depth, cfg.Kernel, cfg.Stride, cfg.Padding)
+	outHeight := cnn3.OutputSpatial(cfg.Height, cfg.Kernel, cfg.Stride, cfg.Padding)
+	outWidth := cnn3.OutputSpatial(cfg.Width, cfg.Kernel, cfg.Stride, cfg.Padding)
+
+	tgt := make([]float32, batch*cfg.Filters*outDepth*outHeight*outWidth)
+	for i := range tgt {
+		tgt[i] = float32(0.04 * float64(i%6+1))
+	}
+	l, err := cnn3.NewConfigured(cfg, dtype, quant.FormatNone, W)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	l.Exec.Backend = core.BackendCPUTiled
+	l.Exec.MultiCore = false
+	st, err := parallel.NewStack(l)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, cfg.InChannels, cfg.Depth, cfg.Height, cfg.Width)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, cfg.Filters, outDepth, outHeight, outWidth)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
+	if err != nil {
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	wa, err := weights.MatrixF32(st.Children[0].(*cnn3.Layer).Proj.Weights)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	goO := stepbpOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeSTB1Header(1, 1, batch, lr)
+	_ = binary.Write(buf, binary.LittleEndian, int32(10))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.InChannels))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Filters))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Depth))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Height))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Width))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Kernel))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Stride))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Padding))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Activation))
+	_ = binary.Write(buf, binary.LittleEndian, int32(dtype))
+	for _, v := range W {
+		_ = binary.Write(buf, binary.LittleEndian, v)
+	}
+	writeShapesTicks(buf, []int32{batch, int32(cfg.InChannels), int32(cfg.Depth), int32(cfg.Height), int32(cfg.Width)},
+		[]int32{batch, int32(cfg.Filters), int32(outDepth), int32(outHeight), int32(outWidth)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func buildConvT2StepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
+	cfg := preservingConvT2()
+	const batch = 2
+	lr := 1e-2
+	nw := cfg.Filters * cfg.PatchDim()
+	W := randInit(1, nw, 0x53543131)
+	xLen := batch * cfg.InChannels * cfg.Height * cfg.Width
+	x := randInit(1, xLen, 0x53543132)
+	outHeight := convt2.OutputSpatial(cfg.Height, cfg.Kernel, cfg.Stride, cfg.Padding, cfg.OutputPadding)
+	outWidth := convt2.OutputSpatial(cfg.Width, cfg.Kernel, cfg.Stride, cfg.Padding, cfg.OutputPadding)
+
+	tgt := make([]float32, batch*cfg.Filters*outHeight*outWidth)
+	for i := range tgt {
+		tgt[i] = float32(0.04 * float64(i%6+1))
+	}
+	l, err := convt2.NewConfigured(cfg, dtype, quant.FormatNone, W)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	l.Exec.Backend = core.BackendCPUTiled
+	l.Exec.MultiCore = false
+	st, err := parallel.NewStack(l)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, cfg.InChannels, cfg.Height, cfg.Width)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, cfg.Filters, outHeight, outWidth)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
+	if err != nil {
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	wa, err := weights.MatrixF32(st.Children[0].(*convt2.Layer).Proj.Weights)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	goO := stepbpOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeSTB1Header(1, 1, batch, lr)
+	_ = binary.Write(buf, binary.LittleEndian, int32(12))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.InChannels))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Filters))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Height))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Width))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Kernel))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Stride))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Padding))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.OutputPadding))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Activation))
+	_ = binary.Write(buf, binary.LittleEndian, int32(dtype))
+	for _, v := range W {
+		_ = binary.Write(buf, binary.LittleEndian, v)
+	}
+	writeShapesTicks(buf, []int32{batch, int32(cfg.InChannels), int32(cfg.Height), int32(cfg.Width)},
+		[]int32{batch, int32(cfg.Filters), int32(outHeight), int32(outWidth)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+func buildConvT3StepBP(dtype core.DType) (stepbpOut, []byte, error) {
+
+	cfg := preservingConvT3()
+	const batch = 2
+	lr := 1e-2
+	nw := cfg.Filters * cfg.PatchDim()
+	W := randInit(1, nw, 0x53543131)
+	xLen := batch * cfg.InChannels * cfg.Depth * cfg.Height * cfg.Width
+	x := randInit(1, xLen, 0x53543132)
+	outDepth := convt3.OutputSpatial(cfg.Depth, cfg.Kernel, cfg.Stride, cfg.Padding, cfg.OutputPadding)
+	outHeight := convt3.OutputSpatial(cfg.Height, cfg.Kernel, cfg.Stride, cfg.Padding, cfg.OutputPadding)
+	outWidth := convt3.OutputSpatial(cfg.Width, cfg.Kernel, cfg.Stride, cfg.Padding, cfg.OutputPadding)
+
+	tgt := make([]float32, batch*cfg.Filters*outDepth*outHeight*outWidth)
+	for i := range tgt {
+		tgt[i] = float32(0.04 * float64(i%6+1))
+	}
+	l, err := convt3.NewConfigured(cfg, dtype, quant.FormatNone, W)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	l.Exec.Backend = core.BackendCPUTiled
+	l.Exec.MultiCore = false
+	st, err := parallel.NewStack(l)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	xin := core.NewTensor[float32](batch, cfg.InChannels, cfg.Depth, cfg.Height, cfg.Width)
+	copy(xin.Data, x)
+	target := core.NewTensor[float32](batch, cfg.Filters, outDepth, outHeight, outWidth)
+	copy(target.Data, tgt)
+	loss, err := parallel.TrainStackMSE(st, xin, target, parallel.ModeStepBP, lr)
+	if err != nil {
+		return stepbpOut{}, nil, fmt.Errorf("go: %w", err)
+	}
+	wa, err := weights.MatrixF32(st.Children[0].(*convt3.Layer).Proj.Weights)
+	if err != nil {
+		return stepbpOut{}, nil, err
+	}
+	goO := stepbpOut{loss: loss, WAfter: [][]float32{wa}}
+	buf := encodeSTB1Header(1, 1, batch, lr)
+	_ = binary.Write(buf, binary.LittleEndian, int32(13))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.InChannels))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Filters))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Depth))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Height))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Width))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Kernel))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Stride))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Padding))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.OutputPadding))
+	_ = binary.Write(buf, binary.LittleEndian, int32(cfg.Activation))
+	_ = binary.Write(buf, binary.LittleEndian, int32(dtype))
+	for _, v := range W {
+		_ = binary.Write(buf, binary.LittleEndian, v)
+	}
+	writeShapesTicks(buf, []int32{batch, int32(cfg.InChannels), int32(cfg.Depth), int32(cfg.Height), int32(cfg.Width)},
+		[]int32{batch, int32(cfg.Filters), int32(outDepth), int32(outHeight), int32(outWidth)}, [][]float32{x}, [][]float32{tgt})
+	return goO, buf.Bytes(), nil
+}
+
+// Exercise real double-buffer mesh ticks, temporal gradient accumulation and
+// native storage updates. These are distinct from ModeMeshBP volume aliases.
+func caseDenseMeshDTypes(depth, rows, cols int) error {
+	for _, dt := range core.AllDTypes {
+		if err := denseMeshFixture(depth, rows, cols, dt, false); err != nil {
+			return fmt.Errorf("%s: %w", dt, err)
+		}
+	}
+	return nil
+}
+
+func denseMeshFixture(depth, rows, cols int, dt core.DType, routing bool) error {
+	n := depth * rows * cols
+	cells := make([]volCell, n)
+	for i := range cells {
+		cells[i] = volCell{enabled: true, in: 4, out: 4, act: core.ActivationLinear, dtype: dt, W: randInit(4, 4, 0x4d425030+uint32(i))}
+	}
+	var links [][8]int32
+	if routing {
+		cells[1].enabled = false
+		// The final node reads node two across the mesh. Its credit still
+		// traverses disabled node one before reaching node zero.
+		links = append(links, [8]int32{int32(depth - 1), int32(rows - 1), int32(cols - 1), 0, 0, 1, 0, 0})
+	}
+	x := randInit(1, 4, 0x4d425058)
+	target := []float32{0.1, 0.2, -0.3, 0.4}
+	goO, err := runGoDenseMeshBP(depth, rows, cols, 1, 1, n+2, cells, x, target, 0.01, links...)
+	if err != nil {
+		return err
+	}
+	payload, err := encodeDenseMBP1(depth, rows, cols, 1, 1, n+2, cells, x, target, 0.01, links...)
+	if err != nil {
+		return err
+	}
+	metalO, _, err := runMetalMBP1(payload, 0)
+	if err != nil {
+		return err
+	}
+	if err := compareMeshBP(goO, metalO, true); err != nil {
+		return err
+	}
+	benchO, _, err := runMetalMBP1(payload, 2)
+	if err != nil {
+		return err
+	}
+	return compareMeshBP(metalO, benchO, true)
 }

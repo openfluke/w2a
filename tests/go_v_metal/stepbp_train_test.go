@@ -7,7 +7,11 @@ import (
 )
 
 func TestGoVMetalStepBPTrain(t *testing.T) {
-	if err := gvm.RunStepBPTrain(); err != nil {
-		t.Fatal(err)
+	for _, c := range gvm.CasesStepBPTrain() {
+		t.Run(c.Name, func(t *testing.T) {
+			if err := c.Run(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

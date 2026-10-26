@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/openfluke/w2a/suites"
 	"os/exec"
+	"reflect"
 
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/dense"
@@ -23,6 +24,8 @@ type kpModeFixture struct {
 
 func kpModeWire(mode parallel.TrainMode) (request, response string, line bool) {
 	switch mode {
+	case parallel.ModeTweenSplit:
+		return "TSB1", "TSBO", false
 	case parallel.ModeStepBP:
 		return "STB1", "STBO", true
 	case parallel.ModeTween:
@@ -115,7 +118,18 @@ func kpRunMode(mode parallel.TrainMode, dt core.DType, makeFixture func(core.DTy
 	request, response, line := kpModeWire(mode)
 	input := core.NewTensor[float32](ints(f.xShape)...)
 	copy(input.Data, f.x)
-	_, post, err := parallel.ForwardStack(stack, input)
+	var post *core.Tensor[float32]
+	if mode == parallel.ModeTweenSplit {
+		// Split scores its collected tape, whose native branch shape may differ
+		// from the ordinary Parallel forward's normalized feature axes.
+		tape, e := parallel.OpenSplitTape[float32](stack, input)
+		err = e
+		if e == nil {
+			post = tape.Post
+		}
+	} else {
+		_, post, err = parallel.ForwardStack(stack, input)
+	}
 	if err != nil {
 		return fmt.Errorf("initial forward: %w", err)
 	}
@@ -183,9 +197,19 @@ func kpRunMode(mode parallel.TrainMode, dt core.DType, makeFixture func(core.DTy
 	if err = kpCompareMode(ref, fresh, f.allowGDNStrict); err != nil {
 		return err
 	}
-	measured, _, err := runMetalParallelNBP(payload.Bytes(), response, defaultGoBenchIters)
+	iters := defaultGoBenchIters
+	if mode == parallel.ModeTweenSplit && iters < 2 {
+		iters = 2
+	}
+	measured, _, err := runMetalParallelNBP(payload.Bytes(), response, iters)
 	if err != nil {
 		return err
+	}
+	if mode == parallel.ModeTweenSplit {
+		if !reflect.DeepEqual(fresh, measured) {
+			return fmt.Errorf("Split benchmark changed loss or weights")
+		}
+		return nil
 	}
 	return compareParallelNBP(fresh, measured, true)
 }
@@ -267,13 +291,17 @@ func CasesKMeansParallelModes(mode parallel.TrainMode) []Case {
 }
 
 // Keep the simple wire runner local: CPU numerical reference code stays in w2a.
-func kpRunVolumeWire(payload []byte, response string) (nbpVolOut, error) {
+func kpRunVolumeWire(payload []byte, response string, bench ...int) (nbpVolOut, error) {
 	var out nbpVolOut
 	tool, err := findMetalFwd()
 	if err != nil {
 		return out, err
 	}
-	cmd := exec.Command(tool)
+	var args []string
+	if len(bench) > 0 && bench[0] > 0 {
+		args = append(args, fmt.Sprintf("--bench=%d", bench[0]))
+	}
+	cmd := exec.Command(tool, args...)
 	cmd.Stdin = bytes.NewReader(payload)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -319,6 +347,7 @@ func kpVolumeCases(mode parallel.TrainMode) []Case {
 func kpVolumeMode(mode parallel.TrainMode, kind string, z, y, x, l int, dt core.DType) error {
 	const batch, dim, lr = 2, 4, 0.017
 	input, target := seedPat(batch*dim, 0x7101), seedPat(batch*dim, 0x7102)
+	split := mode == parallel.ModeTweenSplit
 	tween := mode == parallel.ModeTween || mode == parallel.ModeStepTween
 	chain := mode == parallel.ModeTweenChain || mode == parallel.ModeStepTweenChain
 	var ref nbpVolOut
@@ -331,7 +360,9 @@ func kpVolumeMode(mode parallel.TrainMode, kind string, z, y, x, l int, dt core.
 		for i := range cells {
 			cells[i] = makeKmVolCell(cfg, 1, dt, uint32(0x7110+i))
 		}
-		if tween {
+		if split {
+			ref, err = runGoKmVolApply(z, y, x, l, batch, cells, input, target, lr, applyModeTweenSplitVolume, true)
+		} else if tween {
 			ref, err = runGoKmVolApply(z, y, x, l, batch, cells, input, target, lr, applyModeTweenVolume, true)
 		} else {
 			ref, err = runGoKmVolNBP(z, y, x, l, batch, cells, input, target, lr)
@@ -341,7 +372,10 @@ func kpVolumeMode(mode parallel.TrainMode, kind string, z, y, x, l int, dt core.
 		}
 		payload, err = encodeKmVolNBP(z, y, x, l, batch, cells, input, target, lr)
 		response = "KMVO"
-		if tween {
+		if split {
+			copy(payload[:4], "KMSP")
+			response = "KMSO"
+		} else if tween {
 			copy(payload[:4], "KMTV")
 			response = "KMTO"
 		} else if chain {
@@ -353,7 +387,9 @@ func kpVolumeMode(mode parallel.TrainMode, kind string, z, y, x, l int, dt core.
 		for i := range cells {
 			cells[i].dtype = dt
 		}
-		if tween {
+		if split {
+			ref, err = runGoPnVolApply(z, y, x, l, batch, cells, input, target, lr, applyModeTweenSplitVolume, true)
+		} else if tween {
 			ref, err = runGoPnVolApply(z, y, x, l, batch, cells, input, target, lr, applyModeTweenVolume, true)
 		} else {
 			ref, err = runGoPnVolNBP(z, y, x, l, batch, cells, input, target, lr)
@@ -362,7 +398,10 @@ func kpVolumeMode(mode parallel.TrainMode, kind string, z, y, x, l int, dt core.
 			return err
 		}
 		payload, err = encodePnVolNBP(z, y, x, l, batch, cells, input, target, lr)
-		if tween {
+		if split {
+			copy(payload[:4], "PNSP")
+			response = "PNSO"
+		} else if tween {
 			copy(payload[:4], "PNTV")
 			response = "PNTO"
 		} else if chain {
@@ -376,6 +415,19 @@ func kpVolumeMode(mode parallel.TrainMode, kind string, z, y, x, l int, dt core.
 	got, err := kpRunVolumeWire(payload, response)
 	if err != nil {
 		return err
+	}
+	if split {
+		iters := defaultGoBenchIters
+		if iters < 2 {
+			iters = 2
+		}
+		measured, err := kpRunVolumeWire(payload, response, iters)
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(got, measured) {
+			return fmt.Errorf("Split volume replay changed tensors, loss or weights")
+		}
 	}
 	if kind == "KMeans" {
 		return compareKmVolNBP(ref, got)

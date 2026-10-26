@@ -39,7 +39,7 @@ import (
 )
 
 // CasesTweenSplitTrain — ModeTweenSplit (1/N gap @ full lr) (FamilyBP on pop) Go↔Metal for NormalBP-signed kinds.
-func CasesTweenSplitTrain() []Case {
+func casesTweenSplitBase() []Case {
 	return []Case{
 		{Name: "Dense TweenSplit multi-hop Float32 — exact tensors; Metal loss band (W/loss)", Run: caseDenseTweenSplitMultiHopF32},
 		{Name: "Dense TweenSplit 1-hop × all 34 dtypes — spectrum + speed", Run: caseDenseTweenSplit1HopAllDTypes},
@@ -2026,4 +2026,33 @@ func caseDenseTweenSplitVolAllDTypes() error {
 		}
 		return compareMeshBP(metalO, benchO, true)
 	})
+}
+
+func CasesTweenSplitTrain() []Case {
+	cases := append(casesTweenSplitBase(), CasesKMeansParallelModes(parallel.ModeTweenSplit)...)
+	return append(cases, Case{Name: "Parallel mixed Dense and weightless Softmax leaves ×34", Run: func() error {
+		for _, dt := range core.AllDTypes {
+			err := kpRunMode(parallel.ModeTweenSplit, dt, func(dt core.DType) (kpModeFixture, error) {
+				ds, x, _, shape, _, err := makeDensePair(dt, 2, 4)
+				if err != nil {
+					return kpModeFixture{}, err
+				}
+				ss, _, _, _, _, err := makeSoftmaxPair(dt, 2, 4)
+				if err != nil {
+					return kpModeFixture{}, err
+				}
+				cfg := parallel.Config{Dim: 4, OutFeat: 4, Branches: 2, Combine: parallel.CombineAdd}
+				layer, err := parallel.NewFromBranches(cfg, []any{ds[0].op, ss[0].op}, nil)
+				if err != nil {
+					return kpModeFixture{}, err
+				}
+				f := kpModeFixture{ops: []any{layer}, wires: [][]byte{encodeParallelChild(cfg, [][]byte{ds[0].bytes, ss[0].bytes}, nil)}, xShape: shape, x: x}
+				return kpAddTail(f, dt, 4)
+			})
+			if err != nil {
+				return fmt.Errorf("%s: %w", dt, err)
+			}
+		}
+		return nil
+	}})
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/openfluke/welvet/architecture"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/dense"
+	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/runtime/step"
 	"github.com/openfluke/welvet/runtime/training"
@@ -393,5 +394,7 @@ func caseDenseMeshTween222F32() error {
 }
 
 func CasesMeshTweenTrain() []Case {
-	return withTypedVolumes(casesMeshTweenBase(), CasesTweenTrain(), "MeshTween ")
+	cases := withTypedVolumes(casesMeshTweenBase(), CasesTweenTrain(), "MeshTween ")
+	cases = append(cases, kpVolumeCases(parallel.ModeTween)...)
+	return append(cases, CasesMeshTweenClockTrain()...)
 }

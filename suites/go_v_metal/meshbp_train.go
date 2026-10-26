@@ -32,6 +32,7 @@ import (
 	"github.com/openfluke/welvet/layers/sequential"
 	"github.com/openfluke/welvet/layers/softmax"
 	"github.com/openfluke/welvet/layers/swiglu"
+	"github.com/openfluke/welvet/runtime/backward"
 	"github.com/openfluke/welvet/runtime/step"
 	"github.com/openfluke/welvet/runtime/training"
 )
@@ -48,6 +49,7 @@ type meshClockOut struct {
 	history   [][][]meshTensor // tick / cell / input, pre, post
 }
 type meshClockFixture struct {
+	tween                     bool
 	lr                        *float64
 	z, y, x, l, ticks, warmup int
 	cells                     []polyBranchEnc
@@ -238,7 +240,11 @@ func writeMeshTensor(b *bytes.Buffer, t meshTensor) {
 }
 func encodeMeshClock(f meshClockFixture) []byte {
 	var b bytes.Buffer
-	b.WriteString("MGB1")
+	if f.tween {
+		b.WriteString("MGW1")
+	} else {
+		b.WriteString("MGB1")
+	}
 	writeI32(&b, int32(f.z), int32(f.y), int32(f.x), int32(f.l), int32(f.ticks), int32(f.warmup))
 	lr := 0.001
 	if f.lr != nil {
@@ -321,9 +327,18 @@ func runGoMeshClock(f meshClockFixture) (meshClockOut, error) {
 	if err != nil {
 		return out, err
 	}
-	gin, grads, err := step.Backward(grid, state, gy)
-	if err != nil {
-		return out, err
+	var gin *core.Tensor[float32]
+	var grads [][2]*core.Tensor[float32]
+	if f.tween {
+		if err = meshGoTween(grid, state, gy, meshLR(f)); err != nil {
+			return out, err
+		}
+		grads = make([][2]*core.Tensor[float32], len(f.cells))
+	} else {
+		gin, grads, err = step.Backward(grid, state, gy)
+		if err != nil {
+			return out, err
+		}
 	}
 	out.gin = meshView(gin)
 	out.weights = make([][]float32, len(f.cells))
@@ -398,7 +413,11 @@ func runMetalMeshClock(payload []byte, iters int) (meshClockOut, error) {
 	if len(raw) >= 16 && string(raw[:4]) == "WVB1" {
 		raw = raw[16:]
 	}
-	if len(raw) < 4 || string(raw[:4]) != "MGBO" {
+	magic := "MGBO"
+	if string(payload[:4]) == "MGW1" {
+		magic = "MGWO"
+	}
+	if len(raw) < 4 || string(raw[:4]) != magic {
 		return out, fmt.Errorf("mesh magic")
 	}
 	r := bytes.NewReader(raw[4:])
@@ -560,8 +579,9 @@ func meshFactory(pc polyCase, dt core.DType, depth, rows, cols int) (meshClockFi
 	}
 	return f, nil
 }
-func runMeshFamily(pc polyCase, dt core.DType, z, y, x int) error {
+func runMeshFamily(pc polyCase, dt core.DType, z, y, x int, tween bool) error {
 	f, err := meshFactory(pc, dt, z, y, x)
+	f.tween = tween
 	if err != nil {
 		return err
 	}
@@ -583,7 +603,13 @@ func runMeshFamily(pc polyCase, dt core.DType, z, y, x int) error {
 	}
 	return meshCompareReplay(got, bench)
 }
-func CasesMeshBPTrain() []Case {
+func CasesMeshBPTrain() []Case         { return meshTrainCases(false) }
+func CasesMeshTweenClockTrain() []Case { return meshTrainCases(true) }
+func meshTrainCases(tween bool) []Case {
+	mode := "MeshBP"
+	if tween {
+		mode = "MeshTween"
+	}
 	var cases []Case
 	for _, pc := range polyTrainKinds() {
 		pc := pc
@@ -593,9 +619,9 @@ func CasesMeshBPTrain() []Case {
 			all     bool
 		}{{"111", 1, 1, 1, true}, {"211", 2, 1, 1, true}, {"222", 2, 2, 2, false}} {
 			top := top
-			label := pc.name + " MeshBP clock " + top.name + " Float32"
+			label := pc.name + " " + mode + " clock " + top.name + " Float32"
 			if top.all && pc.name != "gdn" {
-				label = pc.name + " MeshBP clock " + top.name + " ×34"
+				label = pc.name + " " + mode + " clock " + top.name + " ×34"
 			}
 			cases = append(cases, Case{Name: label, Run: func() error {
 				types := []core.DType{core.DTypeFloat32}
@@ -603,7 +629,7 @@ func CasesMeshBPTrain() []Case {
 					types = core.AllDTypes
 				}
 				for _, dt := range types {
-					if err := runMeshFamily(pc, dt, top.z, top.y, top.x); err != nil {
+					if err := runMeshFamily(pc, dt, top.z, top.y, top.x, tween); err != nil {
 						return fmt.Errorf("%s: %w", dt, err)
 					}
 				}
@@ -611,7 +637,7 @@ func CasesMeshBPTrain() []Case {
 			}})
 		}
 	}
-	return append(cases, meshEdgeCases()...)
+	return append(cases, meshEdgeCases(tween)...)
 }
 
 func meshLR(f meshClockFixture) float64 {
@@ -655,12 +681,12 @@ func meshCompareReplay(fresh, measured meshClockOut) error {
 
 // An ingress node keeps the injected input separate from shape-changing nodes.
 // Parallel Concat and KMeans probabilities feed a real Dense adapter node.
-func meshCompositeFixture(dt core.DType, build func(core.DType) (kpModeFixture, error), family string) error {
+func meshCompositeFixture(dt core.DType, build func(core.DType) (kpModeFixture, error), family string, tween bool) error {
 	k, err := build(dt)
 	if err != nil {
 		return err
 	}
-	f := meshClockFixture{z: 3, y: 1, x: 1, l: 1, ticks: 5,
+	f := meshClockFixture{tween: tween, z: 3, y: 1, x: 1, l: 1, ticks: 5,
 		shape: k.xShape, input: k.x, targetShape: []int32{2, 4},
 		target: seedPat(8, 0x7911), family: family,
 		cells: make([]polyBranchEnc, 3)}
@@ -670,8 +696,9 @@ func meshCompositeFixture(dt core.DType, build func(core.DType) (kpModeFixture, 
 	return meshCheckFixture(f)
 }
 
-func meshRecurrence(pc polyCase, dt core.DType) error {
+func meshRecurrence(pc polyCase, dt core.DType, tween bool) error {
 	f, err := meshFactory(pc, dt, 2, 1, 1)
+	f.tween = tween
 	if err != nil {
 		return err
 	}
@@ -687,12 +714,12 @@ func meshRecurrence(pc polyCase, dt core.DType) error {
 	f.links = [][8]int32{{1, 0, 0, 0, 1, 0, 0, 0}}
 	return meshCheckFixture(f)
 }
-func meshEdgeCases() []Case {
+func meshEdgeCases(tween bool) []Case {
 	var cases []Case
 	addComposite := func(name, family string, build func(core.DType) (kpModeFixture, error)) {
 		cases = append(cases, Case{Name: name + " clock multi-hop ×34", Run: func() error {
 			for _, dt := range core.AllDTypes {
-				if err := meshCompositeFixture(dt, build, family); err != nil {
+				if err := meshCompositeFixture(dt, build, family, tween); err != nil {
 					return fmt.Errorf("%s: %w", dt, err)
 				}
 			}
@@ -722,7 +749,7 @@ func meshEdgeCases() []Case {
 				types = []core.DType{core.DTypeFloat32}
 			}
 			for _, dt := range types {
-				if err := meshRecurrence(pc, dt); err != nil {
+				if err := meshRecurrence(pc, dt, tween); err != nil {
 					return fmt.Errorf("%s: %w", dt, err)
 				}
 			}
@@ -738,6 +765,7 @@ func meshEdgeCases() []Case {
 				}
 				for _, dt := range core.AllDTypes {
 					f, err := meshFactory(pc, dt, 2, 1, 1)
+					f.tween = tween
 					if err != nil {
 						return err
 					}
@@ -752,4 +780,53 @@ func meshEdgeCases() []Case {
 		}})
 	}
 	return cases
+}
+
+// Mirror the mesh last-tick contract with Go's concrete backward/SGD dispatch.
+// Sequential and Residual use Go's public local-Tween leaf collector.
+func meshGoTween(g *architecture.Grid, st *step.State[float32], gap *core.Tensor[float32], lr float64) error {
+	if lr == 0 {
+		return nil
+	}
+	last := len(st.HistoryIn) - 1
+	for i := len(g.Cells) - 1; i >= 0; i-- {
+		c := &g.Cells[i]
+		input, pre, post := st.HistoryIn[last][i], st.HistoryPre[last][i], st.LayerData[i]
+		if c.Layer.IsDisabled || input == nil || pre == nil || post == nil {
+			continue
+		}
+		switch c.Op.(type) {
+		case *sequential.Layer, *residual.Layer:
+			wrapper, err := parallel.NewStack(c.Op)
+			if err != nil {
+				return err
+			}
+			wrapper.Exec.Backend = core.BackendCPUTiled
+			wrapper.Exec.MultiCore = false
+			if err = parallel.TrainStack(wrapper, gap, input, pre, parallel.ModeTween, lr); err != nil {
+				return err
+			}
+		default:
+			projected := projectGapF32(gap, post.Shape...)
+			_, dw, err := backward.Cell(c, projected, input, pre)
+			if err != nil {
+				return err
+			}
+			if dw != nil && dw.Len() > 0 {
+				wrapper, err := parallel.NewStack(c.Op)
+				if err != nil {
+					return err
+				}
+				if err = parallel.ApplyGradSGDStack(wrapper, dw, lr*0.5); err != nil {
+					return err
+				}
+			}
+		}
+		next := core.NewTensor[float32](input.Shape...)
+		if next.Len() == gap.Len() {
+			copy(next.Data, gap.Data)
+		}
+		gap = next
+	}
+	return nil
 }

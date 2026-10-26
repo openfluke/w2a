@@ -257,18 +257,19 @@ int main() {
     check(loss==4 && std::abs(ops.children[0].dense_op.weights.f32[0]-want0[variant])<1e-6 &&
           std::abs(ops.children[1].dense_op.weights.f32[0]-want1[variant])<1e-6,"Proxy credit/order mismatch");
   }
-  for(int credit=0;credit<=3;++credit){
+  for(int credit=0;credit<=9;++credit){
     auto ops=dense_pair();runtime::line::State pipe;
     success(runtime::line::train_mse(ops,&pipe,cx,ct,0.1,&mode_loss,runtime::line::Credit(credit)));
     check(mode_loss==0 && runtime::line::in_flight(pipe)==1,"Line failed warmup");
     success(runtime::line::train_mse(ops,&pipe,cx,ct,0.1,&mode_loss,runtime::line::Credit(credit)));
-    const float want0[]={0.2f,0.8f,0.6f,0.4f},want1[]={1.6f,1.8f,1.6f,1.4f};
+    const float want0[]={0.2f,0.8f,0.6f,0.4f,0.6f,0.6f,0.6f,0.6f,0.6f,0.6f},
+                want1[]={1.6f,1.8f,1.6f,1.4f,1.6f,1.6f,1.6f,1.6f,1.6f,1.6f};
     check(mode_loss==4 && std::abs(ops.children[0].dense_op.weights.f32[0]-want0[credit])<1e-6 &&
       std::abs(ops.children[1].dense_op.weights.f32[0]-want1[credit])<1e-6,"Line used wrong credit or refreshed a frozen gap");
   }
   {auto ops=dense_pair();runtime::line::State pipe;runtime::line::TickResult tr;
     auto rejected=runtime::line::tick(ops,&pipe,cx,&ct,runtime::line::FlightRole::Train,0.1,&tr,
-                                      runtime::line::Credit::FamilyTweenSplitLinear);
+                                      static_cast<runtime::line::Credit>(10));
     check(!rejected && pipe.flights.empty(),"Unsupported Line mode mutated the pipeline");
     for(int i=0;i<2;++i)success(runtime::line::tick(ops,&pipe,cx,nullptr,runtime::line::FlightRole::Action,0.1,&tr,
                                                 runtime::line::Credit::FamilyTween));

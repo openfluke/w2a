@@ -12,6 +12,12 @@ func proxyVariant(mode parallel.TrainMode) int {
 	}
 	return 0
 }
+func stepProxyVariant(mode parallel.TrainMode) int {
+	if mode >= parallel.ModeStepTweenSplitHeadProxy && mode <= parallel.ModeStepTweenSplitSparse {
+		return int(mode-parallel.ModeStepTweenSplitHeadProxy) + 1
+	}
+	return 0
+}
 func proxyEpochs(mode parallel.TrainMode) int {
 	switch mode {
 	case parallel.ModeTweenSplitLinearCache:
@@ -84,4 +90,33 @@ func CasesProxyTrain(mode parallel.TrainMode) []Case {
 		}
 	}
 	return append(cases, CasesKMeansParallelModes(mode)...)
+}
+
+// The five remaining Line modes use ordinary forward shapes and a frozen
+// popped gap; their shared volume matrix is the corresponding non-Step mode.
+func CasesStepProxyTrain(mode parallel.TrainMode) []Case {
+	cases := CasesProxyTrain(mode)
+	for _, ticks := range []int{1, 2, 3, 4} {
+		ticks := ticks
+		cases = append(cases, Case{Name: fmt.Sprintf("pipeline pop %d ticks Parallel Filter Float32", ticks), Run: func() error {
+			return kpRunMode(mode, core.DTypeFloat32, func(dt core.DType) (kpModeFixture, error) {
+				f, e := kpParallelFixture(dt, parallel.CombineFilter)
+				f.epochs = ticks
+				return f, e
+			})
+		}})
+	}
+	if mode == parallel.ModeStepTweenSplitLinearCache {
+		for _, combine := range []parallel.CombineMode{parallel.CombineConcat, parallel.CombineAdd, parallel.CombineAvg, parallel.CombineFilter, parallel.CombineMax, parallel.CombineSparseK, parallel.CombineDisagree} {
+			combine := combine
+			cases = append(cases, Case{Name: "Line cache refresh 26 ticks Parallel " + string(combine) + " Float32", Run: func() error {
+				return kpRunMode(mode, core.DTypeFloat32, func(dt core.DType) (kpModeFixture, error) {
+					f, e := kpParallelFixture(dt, combine)
+					f.epochs = 26
+					return f, e
+				})
+			}})
+		}
+	}
+	return cases
 }

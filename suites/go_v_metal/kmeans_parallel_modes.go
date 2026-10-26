@@ -31,6 +31,16 @@ func kpModeWire(mode parallel.TrainMode) (request, response string, line bool) {
 		return "GPB1", "GPBO", false
 	}
 	switch mode {
+	case parallel.ModeStepTweenSplitLinear:
+		return "STL1", "STLO", true
+	case parallel.ModeStepTweenSplitFastProxy:
+		return "STF1", "STFO", true
+	case parallel.ModeStepTweenSplitLinearCache:
+		return "SLC1", "SLCO", true
+	case parallel.ModeStepTweenSplitHeadProxyAsync:
+		return "SHA1", "SHAO", true
+	case parallel.ModeStepTweenSplitSparse:
+		return "SSP1", "SSPO", true
 	case parallel.ModeStepTweenSplitHeadProxy:
 		return "STH1", "STHO", true
 	case parallel.ModeStepTweenSplit:
@@ -218,7 +228,15 @@ func kpRunMode(mode parallel.TrainMode, dt core.DType, makeFixture func(core.DTy
 	if err != nil {
 		return err
 	}
-	if err = kpCompareMode(ref, fresh, f.allowGDNStrict); err != nil {
+	if stepProxyVariant(mode) >= 2 {
+		// New Line modes use the accepted industry-to-exact CPU/GPU spectrum.
+		// Shapes/counts stay exact, and same-backend replay is checked below.
+		refVolume := meshClockOut{loss: ref.loss, weights: ref.WAfter, grads: make([]meshTensor, len(ref.WAfter))}
+		gotVolume := meshClockOut{loss: fresh.loss, weights: fresh.WAfter, grads: make([]meshTensor, len(fresh.WAfter))}
+		if err = compareProxyVolume(refVolume, gotVolume); err != nil {
+			return err
+		}
+	} else if err = kpCompareMode(ref, fresh, f.allowGDNStrict); err != nil {
 		return err
 	}
 	iters := defaultGoBenchIters
@@ -311,7 +329,7 @@ func CasesKMeansParallelModes(mode parallel.TrainMode) []Case {
 		})
 	}})
 
-	if proxyVariant(mode) > 0 || mode == parallel.ModeStepTweenSplitHeadProxy {
+	if proxyVariant(mode) > 0 || stepProxyVariant(mode) > 0 {
 		return cases
 	}
 	return append(cases, kpVolumeCases(mode)...)

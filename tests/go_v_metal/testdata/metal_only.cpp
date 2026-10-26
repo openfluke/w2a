@@ -1,4 +1,5 @@
 #include "welvet/architecture.hpp"
+#include "welvet_c.h"
 #include "welvet/systems/tween.hpp"
 #include "welvet/systems/tween_chain.hpp"
 #include "welvet/runtime/tween_chain_train.hpp"
@@ -28,9 +29,7 @@ void blocked(Status s) {
 }
 int main() {
   TensorF32 in, pre, post, grad;
-  // Unported kinds and legacy host math must remain unavailable.
-  { kmeans::Layer l; blocked(kmeans::forward(l, in, &pre, &post)); }
-  { parallel::Layer l; blocked(parallel::forward(l, in, &pre, &post)); }
+  // Legacy host numerical APIs must remain unavailable.
   WeightStore w;
   float z = 0;
   blocked(w.matvec_f32(&z, &z)); blocked(w.matvect_f32(&z, &z));
@@ -54,6 +53,24 @@ int main() {
     check(!metal::accumulate_f32(p, g, 1), "accumulate fell back without Metal");
     std::puts("No-device rejection passed; GPU validation requires device access");
     return 2;
+  }
+  // KMeans and Parallel now run their complete NormalBP path on Metal.
+  { float weights[]={0.1f,0.3f,-0.2f,0.4f};TensorF32 x,gy,dx,dw;x.shape={1,2};x.data={0.2f,-0.3f};gy.shape={1,2};gy.data={0.1f,-0.2f};
+    kmeans::Config cfg;cfg.feature_dim=2;cfg.num_clusters=2;kmeans::Layer l;
+    success(kmeans::new_configured(cfg,DType::Float32,weights,&l));success(kmeans::forward(l,x,&pre,&post));
+    check(std::abs(post.data[0]+post.data[1]-1)<1e-6,"KMeans assignments not normalized");
+    success(kmeans::backward_f32(l,gy,x,pre,&dx,&dw));success(kmeans::apply_grad_sgd(&l,dw,0.1));
+    parallel::Config pc;pc.dim=2;pc.out_feat=2;pc.branches=2;pc.combine=parallel::Combine::Add;
+    float packed[]={0.1f,0.3f,-0.2f,0.4f,-0.1f,0.2f,0.3f,0.1f};parallel::Layer pl;
+    success(parallel::new_configured(pc,DType::Float32,packed,&pl));success(parallel::forward(pl,x,&pre,&post));
+    success(parallel::backward_f32(pl,gy,x,pre,&dx,&dw));success(parallel::apply_grad_sgd(&pl,dw,0.1));
+    check(dw.data.size()==8&&dx.data.size()==2,"Parallel gradient layout");
+    float abi_pre[2],abi_post[2],abi_dx[2],abi_dw[8],abi_w[8];double abi_loss;
+    auto status=welvet_parallel_normalbp_f32(1,1,2,2,2,1,0,1,0,0,packed,x.data.data(),gy.data.data(),0,0.1,abi_pre,abi_post,abi_dx,abi_dw,abi_w,&abi_loss);
+    check(status.code==0,status.message);
+    check(std::memcmp(abi_dx,dx.data.data(),sizeof(abi_dx))==0&&std::memcmp(abi_dw,dw.data.data(),sizeof(abi_dw))==0,"Parallel ABI gradients differ");
+    float exported[8];success(parallel::export_packed_f32(pl,exported));
+    check(std::memcmp(abi_w,exported,sizeof(exported))==0&&abi_loss==0,"Parallel ABI SGD differs");
   }
   // CPU references belong exclusively in w2a. Use a non-power-of-two count and
   // cancellation-sensitive data to exercise the float2 loss/gradient arithmetic.

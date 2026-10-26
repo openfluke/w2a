@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// Exactly the Dense NormalBP through Stack NormalBP checklist range. Every dtype,
+// Complete NormalBP checklist, including KMeans and Parallel. Every dtype,
 // leaf, chain and volumetric case runs; StepBP/Tween and other modes are separate.
 func TestGoVMetalNormalBP(t *testing.T) {
 	t.Log("Metal parity: exact tensor bits where specified; loss uses the finite float2 band; FP32 subnormal flushing is allowed. Softmax and GDN retain their declared spectrum floors.")
@@ -30,6 +30,11 @@ func TestGoVMetalNormalBP(t *testing.T) {
 		{"Metacognition", gvm.CasesMetacognitionTrain()},
 		{"GDN", gvm.CasesGDNTrain()},
 		{"Stack", gvm.CasesStackTrain()},
+		{"KMeans", gvm.CasesKMeansTrain()},
+		{"Parallel", gvm.CasesParallelNBPTrain()},
+		{"ParallelPoly", gvm.CasesParallelPolyTrain()},
+		{"NormalBPEdges", gvm.CasesNormalBPEdges()},
+		{"ParallelVolumes", gvm.CasesParallelVolumeDTypes()},
 	}
 	for _, group := range groups {
 		t.Run(group.name, func(t *testing.T) {

@@ -41,7 +41,7 @@ import (
 
 // CasesTweenChainTrain — ModeTweenChain (FamilyBP @ full lr) (FamilyBP on pop) Go↔Metal for NormalBP-signed kinds.
 func CasesTweenChainTrain() []Case {
-	return []Case{
+	return append([]Case{
 		{Name: "Dense TweenChain multi-hop Float32 — exact tensors; Metal loss band (W/loss)", Run: caseDenseTweenChainMultiHopF32},
 		{Name: "Dense TweenChain 1-hop × all 34 dtypes — spectrum + speed", Run: caseDenseTweenChain1HopAllDTypes},
 		{Name: "RMSNorm TweenChain 1-hop Float32 — exact tensors; Metal loss band", Run: caseRMSNormTweenChainF32},
@@ -135,7 +135,7 @@ func CasesTweenChainTrain() []Case {
 		{Name: "ConvT3 TweenChain volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: func() error { return caseConvTTweenChainVol222F32(3) }},
 		{Name: "RNN TweenChain volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseRNNTweenChainVol222F32},
 		{Name: "LSTM TweenChain volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseLSTMTweenChainVol222F32},
-	}
+	}, CasesKMeansParallelModes(parallel.ModeTweenChain)...)
 }
 
 func RunTweenChainTrain() error {

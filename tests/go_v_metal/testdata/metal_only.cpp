@@ -72,6 +72,26 @@ int main() {
     float exported[8];success(parallel::export_packed_f32(pl,exported));
     check(std::memcmp(abi_w,exported,sizeof(exported))==0&&abi_loss==0,"Parallel ABI SGD differs");
   }
+  // Exercise the newly enabled mesh SGD dispatcher for both added kinds.
+  // These are GPU primitives; Go parity for shared 3D credit is separate.
+  for (int kind=0;kind<2;++kind) {
+    auto grid=architecture::new_grid(1,1,1,1);
+    float initial[]={0.1f,0.3f,-0.2f,0.4f,-0.1f,0.2f,0.3f,0.1f};
+    TensorF32 x,target;x.shape={1,2};x.data={0.2f,-0.3f};target.shape={1,2};target.data={0,1};
+    if(kind==0){kmeans::Config cfg;cfg.feature_dim=2;cfg.num_clusters=2;kmeans::Layer layer;
+      success(kmeans::new_configured(cfg,DType::Float32,initial,&layer));
+      success(architecture::bind_kmeans(grid,0,0,0,0,std::move(layer)));
+    }else{parallel::Config cfg;cfg.dim=2;cfg.out_feat=2;cfg.branches=2;cfg.combine=parallel::Combine::Add;parallel::Layer layer;
+      success(parallel::new_configured(cfg,DType::Float32,initial,&layer));
+      success(architecture::bind_parallel(grid,0,0,0,0,std::move(layer)));
+    }
+    double loss;success(runtime::step::train_mse(grid,x,target,1,0.1,&loss));
+    check(std::isfinite(loss),"KMeans/Parallel mesh loss is not finite");
+    float after[8];auto* cell=architecture::at(grid,0,0,0,0);
+    if(kind==0)success(kmeans::export_packed_f32(cell->kmeans_op,after));
+    else success(parallel::export_packed_f32(cell->parallel_op,after));
+    check(std::memcmp(after,initial,(kind==0?4:8)*sizeof(float))!=0,"KMeans/Parallel mesh SGD did not update weights");
+  }
   // CPU references belong exclusively in w2a. Use a non-power-of-two count and
   // cancellation-sensitive data to exercise the float2 loss/gradient arithmetic.
   float p[] = {1.0001f, -3.25f, 7.5f, 0.00001f, -0.75f, 4, -2};

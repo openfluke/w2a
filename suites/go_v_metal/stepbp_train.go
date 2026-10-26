@@ -42,7 +42,7 @@ import (
 
 // CasesStepBPTrain — Line StepBP (FamilyBP on pop) Go↔Metal for NormalBP-signed kinds.
 func CasesStepBPTrain() []Case {
-	return []Case{
+	return append([]Case{
 		{Name: "Dense StepBP multi-hop Float32 — exact tensors; Metal loss band (W/loss)", Run: caseDenseStepBPMultiHopF32},
 		{Name: "Dense StepBP 1-hop × all 34 dtypes — spectrum + speed", Run: caseDenseStepBP1HopAllDTypes},
 		{Name: "RMSNorm StepBP 1-hop Float32 — exact tensors; Metal loss band", Run: caseRMSNormStepBPF32},
@@ -128,7 +128,7 @@ func CasesStepBPTrain() []Case {
 		{Name: "ConvT3 MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: func() error { return caseConvTNBPVol222F32(3) }},
 		{Name: "RNN MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseRNNNBPVol222F32},
 		{Name: "LSTM MeshBP volume 2×2×2×1 Float32 — exact tensors; Metal loss band", Run: caseLSTMNBPVol222F32},
-	}
+	}, CasesKMeansParallelModes(parallel.ModeStepBP)...)
 }
 
 func RunStepBPTrain() error {

@@ -1626,7 +1626,7 @@ func buildConvT3StepTween(dtype core.DType) (steptweenOut, []byte, error) {
 // native storage updates. These are distinct from ModeMeshBP volume aliases.
 
 func CasesStepTweenTrain() []Case {
-	return withTypedVolumes(casesStepTweenBase(), CasesTweenTrain(), "StepTween ")
+	return append(withTypedVolumes(casesStepTweenBase(), CasesTweenTrain(), "StepTween "), CasesKMeansParallelModes(parallel.ModeStepTween)...)
 }
 
 func caseMetacognitionStepTweenF32() error {

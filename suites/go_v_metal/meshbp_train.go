@@ -49,7 +49,7 @@ type meshClockOut struct {
 	history   [][][]meshTensor // tick / cell / input, pre, post
 }
 type meshClockFixture struct {
-	tween                     bool
+	credit                    parallel.TrainMode
 	lr                        *float64
 	z, y, x, l, ticks, warmup int
 	cells                     []polyBranchEnc
@@ -240,8 +240,10 @@ func writeMeshTensor(b *bytes.Buffer, t meshTensor) {
 }
 func encodeMeshClock(f meshClockFixture) []byte {
 	var b bytes.Buffer
-	if f.tween {
+	if f.credit == parallel.ModeMeshTween {
 		b.WriteString("MGW1")
+	} else if f.credit == parallel.ModeMeshTweenChain {
+		b.WriteString("MGC1")
 	} else {
 		b.WriteString("MGB1")
 	}
@@ -329,7 +331,7 @@ func runGoMeshClock(f meshClockFixture) (meshClockOut, error) {
 	}
 	var gin *core.Tensor[float32]
 	var grads [][2]*core.Tensor[float32]
-	if f.tween {
+	if f.credit == parallel.ModeMeshTween {
 		if err = meshGoTween(grid, state, gy, meshLR(f)); err != nil {
 			return out, err
 		}
@@ -416,6 +418,8 @@ func runMetalMeshClock(payload []byte, iters int) (meshClockOut, error) {
 	magic := "MGBO"
 	if string(payload[:4]) == "MGW1" {
 		magic = "MGWO"
+	} else if string(payload[:4]) == "MGC1" {
+		magic = "MGCO"
 	}
 	if len(raw) < 4 || string(raw[:4]) != magic {
 		return out, fmt.Errorf("mesh magic")
@@ -579,9 +583,9 @@ func meshFactory(pc polyCase, dt core.DType, depth, rows, cols int) (meshClockFi
 	}
 	return f, nil
 }
-func runMeshFamily(pc polyCase, dt core.DType, z, y, x int, tween bool) error {
+func runMeshFamily(pc polyCase, dt core.DType, z, y, x int, credit parallel.TrainMode) error {
 	f, err := meshFactory(pc, dt, z, y, x)
-	f.tween = tween
+	f.credit = credit
 	if err != nil {
 		return err
 	}
@@ -603,13 +607,36 @@ func runMeshFamily(pc polyCase, dt core.DType, z, y, x int, tween bool) error {
 	}
 	return meshCompareReplay(got, bench)
 }
-func CasesMeshBPTrain() []Case         { return meshTrainCases(false) }
-func CasesMeshTweenClockTrain() []Case { return meshTrainCases(true) }
-func meshTrainCases(tween bool) []Case {
-	mode := "MeshBP"
-	if tween {
-		mode = "MeshTween"
-	}
+func CasesMeshBPTrain() []Case         { return meshTrainCases(parallel.ModeMeshBP) }
+func CasesMeshTweenClockTrain() []Case { return meshTrainCases(parallel.ModeMeshTween) }
+func CasesMeshTweenChainClockTrain() []Case {
+	cases := meshTrainCases(parallel.ModeMeshTweenChain)
+	return append(cases, Case{Name: "MeshTweenChain equals MeshBP all 23 families Float32", Run: func() error {
+		for _, pc := range polyTrainKinds() {
+			f, err := meshFactory(pc, core.DTypeFloat32, 2, 1, 1)
+			if err != nil {
+				return err
+			}
+			f.credit = parallel.ModeMeshBP
+			bp, err := runMetalMeshClock(encodeMeshClock(f), 0)
+			if err != nil {
+				return err
+			}
+			f.credit = parallel.ModeMeshTweenChain
+			chain, err := runMetalMeshClock(encodeMeshClock(f), 0)
+			if err != nil {
+				return err
+			}
+			if err = meshCompareReplay(bp, chain); err != nil {
+				return fmt.Errorf("%s: %w", pc.name, err)
+			}
+		}
+		return nil
+	}})
+}
+
+func meshTrainCases(credit parallel.TrainMode) []Case {
+	mode := credit.String()
 	var cases []Case
 	for _, pc := range polyTrainKinds() {
 		pc := pc
@@ -629,7 +656,7 @@ func meshTrainCases(tween bool) []Case {
 					types = core.AllDTypes
 				}
 				for _, dt := range types {
-					if err := runMeshFamily(pc, dt, top.z, top.y, top.x, tween); err != nil {
+					if err := runMeshFamily(pc, dt, top.z, top.y, top.x, credit); err != nil {
 						return fmt.Errorf("%s: %w", dt, err)
 					}
 				}
@@ -637,7 +664,7 @@ func meshTrainCases(tween bool) []Case {
 			}})
 		}
 	}
-	return append(cases, meshEdgeCases(tween)...)
+	return append(cases, meshEdgeCases(credit)...)
 }
 
 func meshLR(f meshClockFixture) float64 {
@@ -681,12 +708,12 @@ func meshCompareReplay(fresh, measured meshClockOut) error {
 
 // An ingress node keeps the injected input separate from shape-changing nodes.
 // Parallel Concat and KMeans probabilities feed a real Dense adapter node.
-func meshCompositeFixture(dt core.DType, build func(core.DType) (kpModeFixture, error), family string, tween bool) error {
+func meshCompositeFixture(dt core.DType, build func(core.DType) (kpModeFixture, error), family string, credit parallel.TrainMode) error {
 	k, err := build(dt)
 	if err != nil {
 		return err
 	}
-	f := meshClockFixture{tween: tween, z: 3, y: 1, x: 1, l: 1, ticks: 5,
+	f := meshClockFixture{credit: credit, z: 3, y: 1, x: 1, l: 1, ticks: 5,
 		shape: k.xShape, input: k.x, targetShape: []int32{2, 4},
 		target: seedPat(8, 0x7911), family: family,
 		cells: make([]polyBranchEnc, 3)}
@@ -696,9 +723,9 @@ func meshCompositeFixture(dt core.DType, build func(core.DType) (kpModeFixture, 
 	return meshCheckFixture(f)
 }
 
-func meshRecurrence(pc polyCase, dt core.DType, tween bool) error {
+func meshRecurrence(pc polyCase, dt core.DType, credit parallel.TrainMode) error {
 	f, err := meshFactory(pc, dt, 2, 1, 1)
-	f.tween = tween
+	f.credit = credit
 	if err != nil {
 		return err
 	}
@@ -714,12 +741,12 @@ func meshRecurrence(pc polyCase, dt core.DType, tween bool) error {
 	f.links = [][8]int32{{1, 0, 0, 0, 1, 0, 0, 0}}
 	return meshCheckFixture(f)
 }
-func meshEdgeCases(tween bool) []Case {
+func meshEdgeCases(credit parallel.TrainMode) []Case {
 	var cases []Case
 	addComposite := func(name, family string, build func(core.DType) (kpModeFixture, error)) {
 		cases = append(cases, Case{Name: name + " clock multi-hop ×34", Run: func() error {
 			for _, dt := range core.AllDTypes {
-				if err := meshCompositeFixture(dt, build, family, tween); err != nil {
+				if err := meshCompositeFixture(dt, build, family, credit); err != nil {
 					return fmt.Errorf("%s: %w", dt, err)
 				}
 			}
@@ -749,7 +776,7 @@ func meshEdgeCases(tween bool) []Case {
 				types = []core.DType{core.DTypeFloat32}
 			}
 			for _, dt := range types {
-				if err := meshRecurrence(pc, dt, tween); err != nil {
+				if err := meshRecurrence(pc, dt, credit); err != nil {
 					return fmt.Errorf("%s: %w", dt, err)
 				}
 			}
@@ -765,7 +792,7 @@ func meshEdgeCases(tween bool) []Case {
 				}
 				for _, dt := range core.AllDTypes {
 					f, err := meshFactory(pc, dt, 2, 1, 1)
-					f.tween = tween
+					f.credit = credit
 					if err != nil {
 						return err
 					}

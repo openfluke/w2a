@@ -10,6 +10,7 @@ import (
 
 	"github.com/openfluke/w2a/suites"
 	"github.com/openfluke/welvet/core"
+	"github.com/openfluke/welvet/layers/parallel"
 )
 
 // CasesMeshTweenChainTrain — Dense mesh-clock MeshTweenChain (= MeshBP FamilyBP) + TweenChain volume.
@@ -276,5 +277,7 @@ func caseDenseMeshTweenChain222F32() error {
 }
 
 func CasesMeshTweenChainTrain() []Case {
-	return withTypedVolumes(casesMeshTweenChainBase(), CasesTweenChainTrain(), "MeshTweenChain ")
+	cases := withTypedVolumes(casesMeshTweenChainBase(), CasesTweenChainTrain(), "MeshTweenChain ")
+	cases = append(cases, kpVolumeCases(parallel.ModeTweenChain)...)
+	return append(cases, CasesMeshTweenChainClockTrain()...)
 }

@@ -2,6 +2,11 @@
 #include "welvet/systems/tween.hpp"
 #include "welvet/systems/tween_chain.hpp"
 #include "welvet/runtime/tween_chain_train.hpp"
+#include "welvet/runtime/tween_split_train.hpp"
+#include "welvet/runtime/tween_alt_train.hpp"
+#include "welvet/runtime/line.hpp"
+#include "welvet/runtime/step.hpp"
+#include <cstring>
 #include "welvet/metal/device.hpp"
 #include "welvet/metal/training.hpp"
 #include "welvet/runtime/training.hpp"
@@ -165,6 +170,73 @@ int main() {
   stack::Layer empty_chain;
   check(!runtime::tween_chain_train::train_stack_mse(empty_chain,cx,ct,0.1,&chain_loss),
         "TweenChain empty stack accepted");
+
+  // Subnormal updates must survive storage before a later phase reaches normal.
+  float tiny_w[]={0,-0.0f,2e-38f,-2e-38f};
+  float tiny_ref[]={0,-0.0f,2e-38f,-2e-38f};
+  float tiny_g[]={1e-36f,-1e-36f,1e-36f,-1e-36f};
+  for (int phase=0;phase<2;++phase) {
+    for (int i=0;i<4;++i) {
+      volatile float step=float(0.01*double(tiny_g[i]));
+      tiny_ref[i]=tiny_ref[i]-step;
+    }
+    success(metal::sgd_f32(tiny_w,tiny_g,4,0.01));
+    check(std::memcmp(tiny_w,tiny_ref,sizeof(tiny_w))==0,"Float32 tiny SGD lost stored bits");
+    for (float& g:tiny_g) g*=3;
+  }
+  float tiny_wide_w[]={0}; double tiny_wide_g[]={1e-36};
+  volatile float wide_step=float(0.01*tiny_wide_g[0]);
+  float wide_ref=0.0f-wide_step;
+  success(metal::sgd_f32_f64_grad(tiny_wide_w,tiny_wide_g,1,0.01));
+  check(std::memcmp(tiny_wide_w,&wide_ref,sizeof(float))==0,"Wide-gradient tiny SGD lost stored bits");
+
+  auto dense_pair=[]() {
+    stack::Layer ops;ops.children.resize(2);
+    for(int i=0;i<2;++i){ops.children[i].kind=stack::Kind::Dense;float initial[]={float(i+1)};
+      success(dense::new_layer(1,1,Activation::Linear,DType::Float32,initial,&ops.children[i].dense_op));}
+    return ops;
+  };
+  stack::Layer split_three;split_three.children.resize(3);
+  for(auto& ch:split_three.children){ch.kind=stack::Kind::Dense;float one[]={1};
+    success(dense::new_layer(1,1,Activation::Linear,DType::Float32,one,&ch.dense_op));}
+  double mode_loss=0;
+  success(runtime::tween_split_train::train_stack_mse(split_three,cx,ct,0.1,&mode_loss));
+  volatile float split_step=float(0.1*double(float(2.0/3.0)));
+  for(auto& ch:split_three.children) check(ch.dense_op.weights.f32[0]==1.0f-split_step,"Split did not share 1/N");
+  auto alt_pair=dense_pair();
+  success(runtime::tween_alt_train::train_stack_mse(alt_pair,cx,ct,0.1,&mode_loss));
+  check(std::abs(mode_loss-2.0736)<1e-6 &&
+        std::abs(alt_pair.children[0].dense_op.weights.f32[0]-0.656f)<1e-6 &&
+        std::abs(alt_pair.children[1].dense_op.weights.f32[0]-1.6848f)<1e-6,
+        "Alt did not refresh the gap between Split and Tween phases");
+  for(int credit=0;credit<=3;++credit){
+    auto ops=dense_pair();runtime::line::State pipe;
+    success(runtime::line::train_mse(ops,&pipe,cx,ct,0.1,&mode_loss,runtime::line::Credit(credit)));
+    check(mode_loss==0 && runtime::line::in_flight(pipe)==1,"Line failed warmup");
+    success(runtime::line::train_mse(ops,&pipe,cx,ct,0.1,&mode_loss,runtime::line::Credit(credit)));
+    const float want0[]={0.2f,0.8f,0.6f,0.4f},want1[]={1.6f,1.8f,1.6f,1.4f};
+    check(mode_loss==4 && std::abs(ops.children[0].dense_op.weights.f32[0]-want0[credit])<1e-6 &&
+      std::abs(ops.children[1].dense_op.weights.f32[0]-want1[credit])<1e-6,"Line used wrong credit or refreshed a frozen gap");
+  }
+  {auto ops=dense_pair();runtime::line::State pipe;runtime::line::TickResult tr;
+    auto rejected=runtime::line::tick(ops,&pipe,cx,&ct,runtime::line::FlightRole::Train,0.1,&tr,
+                                      runtime::line::Credit::FamilyTweenSplitHeadProxy);
+    check(!rejected && pipe.flights.empty(),"Unsupported Line mode mutated the pipeline");
+    for(int i=0;i<2;++i)success(runtime::line::tick(ops,&pipe,cx,nullptr,runtime::line::FlightRole::Action,0.1,&tr,
+                                                runtime::line::Credit::FamilyTween));
+    check(!tr.popped_train && tr.action_out.data==std::vector<float>({2}) &&
+          ops.children[0].dense_op.weights.f32[0]==1 && ops.children[1].dense_op.weights.f32[0]==2,
+          "Action flight trained weights");
+  }
+  for(int credit=0;credit<=1;++credit){
+    auto grid=architecture::new_grid(1,1,2,1);
+    for(int i=0;i<2;++i){dense::Layer leaf;float initial[]={float(i+1)};
+      success(dense::new_layer(1,1,Activation::Linear,DType::Float32,initial,&leaf));
+      success(architecture::bind_dense(grid,0,0,i,0,std::move(leaf)));}
+    success(runtime::step::train_mse(grid,cx,ct,2,0.1,&mode_loss,runtime::step::Credit(credit)));
+    check(mode_loss==4 && std::abs(grid.cells[0].dense_op.weights.f32[0]-(credit?0.8f:0.2f))<1e-6 &&
+      std::abs(grid.cells[1].dense_op.weights.f32[0]-(credit?1.8f:1.6f))<1e-6,"Mesh clock used wrong credit");
+  }
   // GPU cache must observe each new weight update, including changed batch size.
   dense::Layer l;
   float wi[] = {1}; success(dense::new_layer(1, 1, Activation::Linear, DType::Float32, wi, &l));

@@ -240,12 +240,23 @@ func writeMeshTensor(b *bytes.Buffer, t meshTensor) {
 }
 func encodeMeshClock(f meshClockFixture) []byte {
 	var b bytes.Buffer
-	if f.credit == parallel.ModeMeshTween {
-		b.WriteString("MGW1")
-	} else if f.credit == parallel.ModeMeshTweenChain {
-		b.WriteString("MGC1")
-	} else {
-		b.WriteString("MGB1")
+	switch f.credit {
+	case parallel.ModeMeshTweenSplit:
+		b.WriteString("MGS1")
+	case parallel.ModeMeshTweenAlt:
+		b.WriteString("MGA1")
+	case parallel.ModeMeshTweenSplitFastProxy:
+		b.WriteString("MGF1")
+	case parallel.ModeMeshTweenSplitSparse:
+		b.WriteString("MGQ1")
+	default:
+		if f.credit == parallel.ModeMeshTween {
+			b.WriteString("MGW1")
+		} else if f.credit == parallel.ModeMeshTweenChain {
+			b.WriteString("MGC1")
+		} else {
+			b.WriteString("MGB1")
+		}
 	}
 	writeI32(&b, int32(f.z), int32(f.y), int32(f.x), int32(f.l), int32(f.ticks), int32(f.warmup))
 	lr := 0.001
@@ -331,8 +342,8 @@ func runGoMeshClock(f meshClockFixture) (meshClockOut, error) {
 	}
 	var gin *core.Tensor[float32]
 	var grads [][2]*core.Tensor[float32]
-	if f.credit == parallel.ModeMeshTween {
-		if err = meshGoTween(grid, state, gy, meshLR(f)); err != nil {
+	if f.credit == parallel.ModeMeshTween || (f.credit >= parallel.ModeMeshTweenSplit && f.credit <= parallel.ModeMeshTweenSplitSparse) {
+		if err = meshGoLocalCredit(grid, state, gy, meshLR(f), f.credit); err != nil {
 			return out, err
 		}
 		grads = make([][2]*core.Tensor[float32], len(f.cells))
@@ -416,8 +427,14 @@ func runMetalMeshClock(payload []byte, iters int) (meshClockOut, error) {
 		raw = raw[16:]
 	}
 	magic := "MGBO"
+	localMagic := map[string]string{"MGS1": "MGSO", "MGA1": "MGAO", "MGF1": "MGFO", "MGQ1": "MGQO"}
+	if value, ok := localMagic[string(payload[:4])]; ok {
+		magic = value
+	}
 	if string(payload[:4]) == "MGW1" {
 		magic = "MGWO"
+	} else if string(payload[:4]) == "PGB1" {
+		magic = "PGVO"
 	} else if string(payload[:4]) == "MGC1" {
 		magic = "MGCO"
 	}

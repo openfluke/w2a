@@ -39,7 +39,7 @@ import (
 )
 
 // CasesTweenAltTrain — ModeTweenAlt (Split→Tween AltTimes; default 1) Go↔Metal for NormalBP-signed kinds.
-func CasesTweenAltTrain() []Case {
+func casesTweenAltPrevious() []Case {
 	return []Case{
 		{Name: "Dense TweenAlt multi-hop Float32 — exact tensors; Metal loss band (W/loss)", Run: caseDenseTweenAltMultiHopF32},
 		{Name: "Dense TweenAlt 1-hop × all 34 dtypes — spectrum + speed", Run: caseDenseTweenAlt1HopAllDTypes},
@@ -2025,4 +2025,8 @@ func caseDenseTweenAltVolAllDTypes() error {
 		}
 		return compareMeshBP(metalO, benchO, true)
 	})
+}
+
+func CasesTweenAltTrain() []Case {
+	return append(casesTweenAltPrevious(), CasesKMeansParallelModes(parallel.ModeTweenAlt)...)
 }

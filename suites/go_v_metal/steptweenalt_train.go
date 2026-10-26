@@ -1784,6 +1784,10 @@ func buildConvT3StepTweenAlt(dtype core.DType) (steptweenaltOut, []byte, error) 
 // Exercise real double-buffer mesh ticks, temporal gradient accumulation and
 // native storage updates. These are distinct from ModeMeshBP volume aliases.
 
-func CasesStepTweenAltTrain() []Case {
+func casesStepTweenAltPrevious() []Case {
 	return withTypedVolumes(casesStepTweenAltBase(), CasesTweenAltTrain(), "StepTweenAlt ")
+}
+
+func CasesStepTweenAltTrain() []Case {
+	return append(casesStepTweenAltPrevious(), CasesKMeansParallelModes(parallel.ModeStepTweenAlt)...)
 }

@@ -1,6 +1,7 @@
 #include "welvet/architecture.hpp"
 #include "welvet_c.h"
 #include "welvet/systems/tween.hpp"
+#include "welvet/systems/tween_split.hpp"
 #include "welvet/systems/tween_chain.hpp"
 #include "welvet/runtime/tween_chain_train.hpp"
 #include "welvet/runtime/tween_split_train.hpp"
@@ -246,6 +247,16 @@ int main() {
         std::abs(alt_pair.children[0].dense_op.weights.f32[0]-0.656f)<1e-6 &&
         std::abs(alt_pair.children[1].dense_op.weights.f32[0]-1.6848f)<1e-6,
         "Alt did not refresh the gap between Split and Tween phases");
+  // Distinct proxy update order: Linear uses updated W, Async saves post-update Wᵀgy.
+  for(int variant=1;variant<=6;++variant){
+    auto ops=dense_pair();double loss=0;
+    success(systems::tween_split::train_stack_variant(ops,cx,ct,0.1,&loss,
+              static_cast<systems::tween_split::Variant>(variant)));
+    const float want0[]={0,0.2f,0.64f,0.2f,0.64f,0.36f,0.2f};
+    const float want1[]={0,1.6f,1.8f,1.6f,1.8f,1.6f,1.6f};
+    check(loss==4 && std::abs(ops.children[0].dense_op.weights.f32[0]-want0[variant])<1e-6 &&
+          std::abs(ops.children[1].dense_op.weights.f32[0]-want1[variant])<1e-6,"Proxy credit/order mismatch");
+  }
   for(int credit=0;credit<=3;++credit){
     auto ops=dense_pair();runtime::line::State pipe;
     success(runtime::line::train_mse(ops,&pipe,cx,ct,0.1,&mode_loss,runtime::line::Credit(credit)));
@@ -257,7 +268,7 @@ int main() {
   }
   {auto ops=dense_pair();runtime::line::State pipe;runtime::line::TickResult tr;
     auto rejected=runtime::line::tick(ops,&pipe,cx,&ct,runtime::line::FlightRole::Train,0.1,&tr,
-                                      runtime::line::Credit::FamilyTweenSplitHeadProxy);
+                                      runtime::line::Credit::FamilyTweenSplitLinear);
     check(!rejected && pipe.flights.empty(),"Unsupported Line mode mutated the pipeline");
     for(int i=0;i<2;++i)success(runtime::line::tick(ops,&pipe,cx,nullptr,runtime::line::FlightRole::Action,0.1,&tr,
                                                 runtime::line::Credit::FamilyTween));

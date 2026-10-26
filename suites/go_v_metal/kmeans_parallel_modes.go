@@ -4,17 +4,21 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/openfluke/w2a/suites"
+	"math"
 	"os/exec"
 	"reflect"
 
+	"github.com/openfluke/welvet/architecture"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/layers/kmeans"
 	"github.com/openfluke/welvet/layers/parallel"
 	"github.com/openfluke/welvet/quant"
+	"github.com/openfluke/welvet/runtime/forward"
 )
 
 type kpModeFixture struct {
+	epochs         int
 	allowGDNStrict bool
 	ops            []any
 	wires          [][]byte
@@ -23,7 +27,18 @@ type kpModeFixture struct {
 }
 
 func kpModeWire(mode parallel.TrainMode) (request, response string, line bool) {
+	if proxyVariant(mode) > 0 {
+		return "GPB1", "GPBO", false
+	}
 	switch mode {
+	case parallel.ModeStepTweenSplitHeadProxy:
+		return "STH1", "STHO", true
+	case parallel.ModeStepTweenSplit:
+		return "STS1", "STSO", true
+	case parallel.ModeTweenAlt:
+		return "TAB1", "TABO", false
+	case parallel.ModeStepTweenAlt:
+		return "STA1", "STAO", true
 	case parallel.ModeTweenSplit:
 		return "TSB1", "TSBO", false
 	case parallel.ModeStepBP:
@@ -119,7 +134,7 @@ func kpRunMode(mode parallel.TrainMode, dt core.DType, makeFixture func(core.DTy
 	input := core.NewTensor[float32](ints(f.xShape)...)
 	copy(input.Data, f.x)
 	var post *core.Tensor[float32]
-	if mode == parallel.ModeTweenSplit {
+	if mode == parallel.ModeTweenSplit || proxyVariant(mode) > 0 {
 		// Split scores its collected tape, whose native branch shape may differ
 		// from the ordinary Parallel forward's normalized feature axes.
 		tape, e := parallel.OpenSplitTape[float32](stack, input)
@@ -145,9 +160,15 @@ func kpRunMode(mode parallel.TrainMode, dt core.DType, makeFixture func(core.DTy
 	}
 	stack.Exec.Backend = core.BackendCPUTiled
 	stack.Exec.MultiCore = false
-	ticks := 1
+	ticks := proxyEpochs(mode)
+	if f.epochs > ticks {
+		ticks = f.epochs
+	}
 	if line {
 		ticks = 5
+	}
+	if f.epochs > 0 {
+		ticks = f.epochs
 	}
 	const lr = 0.017
 	var xs, ts [][]float32
@@ -179,6 +200,9 @@ func kpRunMode(mode parallel.TrainMode, dt core.DType, makeFixture func(core.DTy
 	}
 	var payload bytes.Buffer
 	payload.WriteString(request)
+	if request == "GPB1" {
+		writeI32(&payload, int32(proxyVariant(mode)))
+	}
 	writeI32(&payload, int32(len(f.ops)), int32(ticks), f.xShape[0])
 	writeF64(&payload, lr)
 	for _, wire := range f.wires {
@@ -287,6 +311,9 @@ func CasesKMeansParallelModes(mode parallel.TrainMode) []Case {
 		})
 	}})
 
+	if proxyVariant(mode) > 0 || mode == parallel.ModeStepTweenSplitHeadProxy {
+		return cases
+	}
 	return append(cases, kpVolumeCases(mode)...)
 }
 
@@ -347,7 +374,8 @@ func kpVolumeCases(mode parallel.TrainMode) []Case {
 func kpVolumeMode(mode parallel.TrainMode, kind string, z, y, x, l int, dt core.DType) error {
 	const batch, dim, lr = 2, 4, 0.017
 	input, target := seedPat(batch*dim, 0x7101), seedPat(batch*dim, 0x7102)
-	split := mode == parallel.ModeTweenSplit
+	split := mode == parallel.ModeTweenSplit || mode == parallel.ModeStepTweenSplit
+	alt := mode == parallel.ModeTweenAlt || mode == parallel.ModeStepTweenAlt
 	tween := mode == parallel.ModeTween || mode == parallel.ModeStepTween
 	chain := mode == parallel.ModeTweenChain || mode == parallel.ModeStepTweenChain
 	var ref nbpVolOut
@@ -360,7 +388,9 @@ func kpVolumeMode(mode parallel.TrainMode, kind string, z, y, x, l int, dt core.
 		for i := range cells {
 			cells[i] = makeKmVolCell(cfg, 1, dt, uint32(0x7110+i))
 		}
-		if split {
+		if alt {
+			ref, err = runGoKmVolApply(z, y, x, l, batch, cells, input, target, lr, kpAltVolume, true)
+		} else if split {
 			ref, err = runGoKmVolApply(z, y, x, l, batch, cells, input, target, lr, applyModeTweenSplitVolume, true)
 		} else if tween {
 			ref, err = runGoKmVolApply(z, y, x, l, batch, cells, input, target, lr, applyModeTweenVolume, true)
@@ -372,7 +402,10 @@ func kpVolumeMode(mode parallel.TrainMode, kind string, z, y, x, l int, dt core.
 		}
 		payload, err = encodeKmVolNBP(z, y, x, l, batch, cells, input, target, lr)
 		response = "KMVO"
-		if split {
+		if alt {
+			copy(payload[:4], "KMAL")
+			response = "KMAO"
+		} else if split {
 			copy(payload[:4], "KMSP")
 			response = "KMSO"
 		} else if tween {
@@ -387,7 +420,9 @@ func kpVolumeMode(mode parallel.TrainMode, kind string, z, y, x, l int, dt core.
 		for i := range cells {
 			cells[i].dtype = dt
 		}
-		if split {
+		if alt {
+			ref, err = runGoPnVolApply(z, y, x, l, batch, cells, input, target, lr, kpAltVolume, true)
+		} else if split {
 			ref, err = runGoPnVolApply(z, y, x, l, batch, cells, input, target, lr, applyModeTweenSplitVolume, true)
 		} else if tween {
 			ref, err = runGoPnVolApply(z, y, x, l, batch, cells, input, target, lr, applyModeTweenVolume, true)
@@ -398,7 +433,10 @@ func kpVolumeMode(mode parallel.TrainMode, kind string, z, y, x, l int, dt core.
 			return err
 		}
 		payload, err = encodePnVolNBP(z, y, x, l, batch, cells, input, target, lr)
-		if split {
+		if alt {
+			copy(payload[:4], "PNAL")
+			response = "PNAO"
+		} else if split {
 			copy(payload[:4], "PNSP")
 			response = "PNSO"
 		} else if tween {
@@ -441,8 +479,14 @@ func kpCompareMode(a, b parallelNBPOut, gdn bool) error {
 	if !gdn {
 		return compareParallelNBP(a, b, true)
 	}
-	if len(a.WAfter) != len(b.WAfter) || !metalLossWithinBand(a.loss, b.loss) {
-		return fmt.Errorf("GDN Parallel loss or child count mismatch")
+	lossOK := metalLossWithinBand(a.loss, b.loss)
+	// Match the existing standalone GDN finite relative loss gate, including
+	// accumulated state/weight differences over cache-refresh training epochs.
+	if !lossOK {
+		lossOK = !(math.IsNaN(a.loss) || math.IsNaN(b.loss) || math.IsInf(a.loss, 0) || math.IsInf(b.loss, 0)) && math.Abs(a.loss-b.loss) <= 1e-5*math.Max(1e-30, math.Abs(a.loss))
+	}
+	if len(a.WAfter) != len(b.WAfter) || !lossOK {
+		return fmt.Errorf("GDN Parallel loss or child count mismatch: go=%g metal=%g", a.loss, b.loss)
 	}
 	for i := range a.WAfter {
 		if len(a.WAfter[i]) != len(b.WAfter[i]) {
@@ -454,4 +498,17 @@ func kpCompareMode(a, b parallelNBPOut, gdn bool) error {
 		}
 	}
 	return nil
+}
+
+func kpAltVolume(g *architecture.Grid, fwd *forward.Result[float32], target *core.Tensor[float32], lr float64) (float64, error) {
+	input := fwd.Steps[0].Input
+	if _, err := applyModeTweenSplitVolume(g, fwd, target, lr); err != nil {
+		return 0, err
+	}
+	fresh, err := forward.Forward(g, input)
+	if err != nil {
+		return 0, err
+	}
+	*fwd = *fresh
+	return applyModeTweenVolume(g, fwd, target, lr)
 }

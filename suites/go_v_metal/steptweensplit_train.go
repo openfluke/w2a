@@ -1786,6 +1786,10 @@ func buildConvT3StepTweenSplit(dtype core.DType) (steptweensplitOut, []byte, err
 // Exercise real double-buffer mesh ticks, temporal gradient accumulation and
 // native storage updates. These are distinct from ModeMeshBP volume aliases.
 
-func CasesStepTweenSplitTrain() []Case {
+func casesStepTweenSplitPrevious() []Case {
 	return withTypedVolumes(casesStepTweenSplitBase(), CasesTweenSplitTrain(), "StepTweenSplit ")
+}
+
+func CasesStepTweenSplitTrain() []Case {
+	return append(casesStepTweenSplitPrevious(), CasesKMeansParallelModes(parallel.ModeStepTweenSplit)...)
 }

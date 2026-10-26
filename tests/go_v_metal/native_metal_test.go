@@ -24,3 +24,22 @@ func TestGoNativeMetalMesh(t *testing.T) {
 		})
 	}
 }
+
+func TestGoNativeMetalRoutingLayers(t *testing.T) {
+	for _, c := range gvm.CasesNativeMetalRouting() {
+		t.Run(c.Name, func(t *testing.T) {
+			if e := c.Run(); e != nil {
+				t.Fatal(e)
+			}
+		})
+	}
+}
+func TestGoNativeMetalRoutingModes(t *testing.T) {
+	for _, c := range gvm.CasesNativeMetalRoutedModes() {
+		t.Run(c.Name, func(t *testing.T) {
+			if e := c.Run(); e != nil {
+				t.Fatal(e)
+			}
+		})
+	}
+}

@@ -31,6 +31,18 @@ void blocked(Status s) {
         "CPU operation did not fail closed");
 }
 int main() {
+  // Public FFI rejects malformed descriptors before allocating/executing them.
+  check(welvet_model_abi_version()==1,"unexpected model ABI version");
+  welvet_model_session* bad_session=nullptr;
+  check(welvet_model_mount(nullptr,0,&bad_session).code==1 && !bad_session,"null model mount accepted");
+  std::vector<uint8_t> descriptor;
+  auto put_i32=[&](int32_t x){auto* p=reinterpret_cast<uint8_t*>(&x);descriptor.insert(descriptor.end(),p,p+4);};
+  put_i32(0x314e4d57);put_i32(0);put_i32(1);
+  for(int i=0;i<4;++i)put_i32(1);
+  put_i32(7); // MHA: deliberately invalid zero heads, no payload required.
+  for(int32_t x:{1,1,0,0,0,1,0,0,1})put_i32(x);
+  check(welvet_model_mount(descriptor.data(),descriptor.size(),&bad_session).code==1 && !bad_session,"invalid MHA descriptor accepted");
+  welvet_metal_blob empty{};welvet_metal_blob_free(&empty);welvet_metal_blob_free(nullptr);welvet_model_release(nullptr);
   TensorF32 in, pre, post, grad;
   // Legacy host numerical APIs must remain unavailable.
   WeightStore w;

@@ -1,3 +1,5 @@
+#include "welvet/cam_sync.hpp"
+#include "welvet/runtime/cameral_train.hpp"
 #include "welvet/architecture.hpp"
 #include "welvet_c.h"
 #include "welvet/systems/tween.hpp"
@@ -256,6 +258,38 @@ int main() {
     const float want1[]={0,1.6f,1.8f,1.6f,1.8f,1.6f,1.6f};
     check(loss==4 && std::abs(ops.children[0].dense_op.weights.f32[0]-want0[variant])<1e-6 &&
           std::abs(ops.children[1].dense_op.weights.f32[0]-want1[variant])<1e-6,"Proxy credit/order mismatch");
+  }
+  // Strong semantic controls remain exact despite the CPU/GPU tolerance band.
+  {parallel::Config cfg;cfg.dim=1;cfg.out_feat=1;cfg.branches=2;cfg.combine=parallel::Combine::Add;
+    parallel::Layer adversarial;float w[]={1,1};success(parallel::new_configured(cfg,DType::Float32,w,&adversarial));
+    adversarial.controls.modes={TrainMode::Adversarial,TrainMode::Freeze};double loss;
+    success(runtime::cameral_train::train_mse(adversarial,cx,ct,TrainMode::NormalBP,.1,&loss));
+    check(loss==4 && std::abs(adversarial.branches[0].dense_op.weights.f32[0]-1.4f)<1e-6 && adversarial.branches[1].dense_op.weights.f32[0]==1,"Adversarial branch failed ascent/frozen peer");
+    parallel::Layer memory;success(parallel::new_configured(cfg,DType::Float32,w,&memory));memory.controls.modes={TrainMode::Memory,TrainMode::Freeze};memory.controls.surprise_thresh=5;
+    success(runtime::cameral_train::train_mse(memory,cx,ct,TrainMode::NormalBP,.1,&loss));check(memory.branches[0].dense_op.weights.f32[0]==1,"Memory sleeping branch updated");
+    memory.controls.surprise_thresh=3;success(runtime::cameral_train::train_mse(memory,cx,ct,TrainMode::NormalBP,.1,&loss));check(std::abs(memory.branches[0].dense_op.weights.f32[0]-.6f)<1e-6,"Memory awake branch failed to train");
+    parallel::Layer shadow;float sw[]={1,3};success(parallel::new_configured(cfg,DType::Float32,sw,&shadow));shadow.controls.modes={TrainMode::Shadow,TrainMode::NormalBP};TensorF32 target=cx;target.data[0]=4;
+    success(runtime::cameral_train::train_mse(shadow,cx,target,TrainMode::NormalBP,.1,&loss));check(loss==0 && shadow.branches[0].dense_op.weights.f32[0]==1 && std::abs(shadow.branches[1].dense_op.weights.f32[0]-2.6f)<1e-6,"Shadow teacher/KD mismatch");
+    parallel::Layer scaled;success(parallel::new_configured(cfg,DType::Float32,w,&scaled));scaled.controls.modes={TrainMode::NormalBP,TrainMode::NormalBP};scaled.controls.branch_lrs={.5,0};success(runtime::cameral_train::train_mse(scaled,cx,ct,TrainMode::NormalBP,.1,&loss));check(std::abs(scaled.branches[0].dense_op.weights.f32[0]-.8f)<1e-6 && scaled.branches[1].dense_op.weights.f32[0]==1,"Branch LR scaling/zero mismatch");
+  }
+  for(auto mode:{TrainMode::Freeze,TrainMode::Shadow}){stack::Child frozen;frozen.kind=stack::Kind::Dense;float w[]={2};success(dense::new_layer(1,1,Activation::Linear,DType::Float32,w,&frozen.dense_op));TensorF32 pre,post,gy=cx,gx;gy.data[0]=4;success(stack::child_forward(frozen,cx,&pre,&post));success(runtime::cameral_train::train_child(frozen,gy,cx,pre,post,mode,.1,&gx));check(gx.data==std::vector<float>{8} && frozen.dense_op.weights.f32[0]==2,"Frozen input gradient did not pass through");}
+  // CamSync must blend on GPU, respect one-way writes and invalidate caches.
+  {dense::Layer teacher,student;float wa[]={1},wb[]={3};
+    success(dense::new_layer(1,1,Activation::Linear,DType::Float32,wa,&teacher));
+    success(dense::new_layer(1,1,Activation::Linear,DType::Float32,wb,&student));
+    teacher.weights.bias={1};student.weights.bias={3};TensorF32 pre,post;
+    success(dense::forward_f32(student,cx,&pre,&post));check(post.data[0]==6,"CamSync cache prime");
+    success(cameral::blend_stores({{&teacher.weights,&teacher},{&student.weights,&student}},{0,1}));
+    success(dense::forward_f32(student,cx,&pre,&post));
+    check(teacher.weights.f32[0]==1 && teacher.weights.bias[0]==1 && student.weights.f32[0]==2 && student.weights.bias[0]==2 && post.data[0]==4,"CamSync one-way/bias/cache mismatch");
+    auto rejected=cameral::blend_stores({{&teacher.weights,&teacher},{&student.weights,&student}},{1});
+    check(!rejected && student.weights.f32[0]==2,"CamSync invalid alpha count mutated stores");
+  }
+  for(int dtype=0;dtype<kNumDTypes;++dtype){float wa[]={.2f,.4f},wb[]={-.3f,.1f};WeightStore a,b;
+    success(WeightStore::make(1,2,DType(dtype),wa,&a));success(WeightStore::make(1,2,DType(dtype),wb,&b));
+    auto before_a=a.native,before_b=b.native;auto fa=a.f32,fb=b.f32;float sa=a.scale,sb=b.scale;
+    success(cameral::blend_stores({{&a},{&b}},{0,-1}));
+    check(a.native==before_a && b.native==before_b && a.f32==fa && b.f32==fb && a.scale==sa && b.scale==sb,"CamSync no-write changed native payload");
   }
   for(int credit=0;credit<=9;++credit){
     auto ops=dense_pair();runtime::line::State pipe;

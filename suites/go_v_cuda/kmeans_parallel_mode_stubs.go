@@ -63,36 +63,5 @@ func applyModeTweenSplitVolume(g *architecture.Grid, fwd *forward.Result[float32
 	return 0, fmt.Errorf("applyModeTweenSplitVolume: not implemented on go_v_cuda yet")
 }
 
-func applyModeTweenVolume(g *architecture.Grid, fwd *forward.Result[float32], target *core.Tensor[float32], lr float64) (float64, error) {
-	return 0, fmt.Errorf("applyModeTweenVolume: not implemented on go_v_cuda yet")
-}
 
-func runGoKmVolApply(depth, rows, cols, lpc, batch int, cells []kmVolCell, x, target []float32, lr float64, apply volApplyFwd, clearGin bool) (nbpVolOut, error) {
-	_ = depth
-	_ = rows
-	_ = cols
-	_ = lpc
-	_ = batch
-	_ = cells
-	_ = x
-	_ = target
-	_ = lr
-	_ = apply
-	_ = clearGin
-	return nbpVolOut{}, fmt.Errorf("runGoKmVolApply: not implemented on go_v_cuda yet")
-}
 
-func runGoPnVolApply(depth, rows, cols, lpc, batch int, cells []pnVolCell, x, target []float32, lr float64, apply volApplyFwd, clearGin bool) (nbpVolOut, error) {
-	_ = depth
-	_ = rows
-	_ = cols
-	_ = lpc
-	_ = batch
-	_ = cells
-	_ = x
-	_ = target
-	_ = lr
-	_ = apply
-	_ = clearGin
-	return nbpVolOut{}, fmt.Errorf("runGoPnVolApply: not implemented on go_v_cuda yet")
-}

@@ -1,0 +1,398 @@
+package go_v_cuda
+
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"io"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/openfluke/w2a/suites"
+	"github.com/openfluke/welvet/core"
+	"github.com/openfluke/welvet/layers/rmsnorm"
+	"github.com/openfluke/welvet/quant"
+)
+
+func CasesRMSNorm() []Case {
+	return []Case{
+		{Name: "Locate welvet.cuda tool", Run: caseLocateCUDA},
+		{Name: "Locate welvet.cpp tool (optional speed)", Run: caseLocateCppOptional},
+		{Name: "RMSNorm Float32 [batch,dim] γ=1 — exact bits vs Go", Run: caseRMSNormOnes2D},
+		{Name: "RMSNorm Float32 [batch,seq,dim] random γ — exact bits vs Go", Run: caseRMSNormSeq3D},
+		{Name: "RMSNorm Float32 custom eps — exact bits vs Go", Run: caseRMSNormCustomEps},
+		{Name: "RMSNorm FormatNone ×34 — exact_bit + Go/C++/CUDA timings", Run: caseRMSNormAllDTypes},
+	}
+}
+
+func RunRMSNorm() error {
+	var fails []string
+	cs := CasesRMSNorm()
+	for i, c := range cs {
+		suites.BeginCase()
+		fmt.Printf("  [rmsnorm %d] %s … ", i+1, c.Name)
+		if err := c.Run(); err != nil {
+			suites.EndCase("go_v_cuda_rmsnorm", c.Name, "FAIL", err.Error())
+			fmt.Printf("FAIL\n      %v\n", err)
+			fails = append(fails, fmt.Sprintf("%d:%s", i+1, c.Name))
+			continue
+		}
+		suites.EndCase("go_v_cuda_rmsnorm", c.Name, "PASS", "")
+		fmt.Println("PASS")
+	}
+	if len(fails) > 0 {
+		return fmt.Errorf("go_v_cuda rmsnorm: %d failed: %s", len(fails), strings.Join(fails, ", "))
+	}
+	return nil
+}
+
+type rmsnormCase struct {
+	batch, seq int
+	cfg        rmsnorm.Config
+	dtype      core.DType
+	backend    core.Backend
+	gamma      []float32
+	x          []float32
+}
+
+func runGoRMSNorm(fc rmsnormCase) (pre, post []float32, err error) {
+	cfg := fc.cfg
+	if err := cfg.Validate(); err != nil {
+		return nil, nil, err
+	}
+	l, err := rmsnorm.NewConfigured(cfg, fc.dtype, quant.FormatNone, fc.gamma)
+	if err != nil {
+		return nil, nil, err
+	}
+	l.Exec.Backend = fc.backend
+	l.Exec.MultiCore = false
+	l.Core.MultiCore = false
+
+	var t *core.Tensor[float32]
+	if fc.seq == 1 {
+		t = core.NewTensor[float32](fc.batch, cfg.Dim)
+	} else {
+		t = core.NewTensor[float32](fc.batch, fc.seq, cfg.Dim)
+	}
+	copy(t.Data, fc.x)
+	preT, postT, err := rmsnorm.Forward(l, t)
+	if err != nil {
+		return nil, nil, err
+	}
+	return append([]float32(nil), preT.Data...), append([]float32(nil), postT.Data...), nil
+}
+
+func encodeRMSNorm(fc rmsnormCase) ([]byte, error) {
+	cfg := fc.cfg
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	var in bytes.Buffer
+	_, _ = in.Write([]byte("WVR1"))
+	_ = binary.Write(&in, binary.LittleEndian, int32(fc.batch))
+	_ = binary.Write(&in, binary.LittleEndian, int32(fc.seq))
+	_ = binary.Write(&in, binary.LittleEndian, int32(cfg.Dim))
+	_ = binary.Write(&in, binary.LittleEndian, cfg.Eps)
+	_ = binary.Write(&in, binary.LittleEndian, int32(fc.dtype))
+	_ = binary.Write(&in, binary.LittleEndian, int32(fc.backend))
+	for _, v := range fc.gamma {
+		_ = binary.Write(&in, binary.LittleEndian, v)
+	}
+	for _, v := range fc.x {
+		_ = binary.Write(&in, binary.LittleEndian, v)
+	}
+	return in.Bytes(), nil
+}
+
+func decodeRMSNorm(raw []byte) (pre, post []float32, bench time.Duration, err error) {
+	if len(raw) >= 4+8+4 && string(raw[:4]) == "WVB1" {
+		r := bytes.NewReader(raw[4:])
+		var ns int64
+		var iters int32
+		if err := binary.Read(r, binary.LittleEndian, &ns); err != nil {
+			return nil, nil, 0, err
+		}
+		if err := binary.Read(r, binary.LittleEndian, &iters); err != nil {
+			return nil, nil, 0, err
+		}
+		rest, err := io.ReadAll(r)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		raw = rest
+		bench = time.Duration(ns)
+	}
+	if len(raw) < 8 || string(raw[:4]) != "WVRO" {
+		return nil, nil, bench, fmt.Errorf("rmsnorm bad magic: %q", string(raw[:min(4, len(raw))]))
+	}
+	r := bytes.NewReader(raw[4:])
+	var preN, postN int32
+	if err := binary.Read(r, binary.LittleEndian, &preN); err != nil {
+		return nil, nil, bench, err
+	}
+	pre = make([]float32, preN)
+	for i := range pre {
+		if err := binary.Read(r, binary.LittleEndian, &pre[i]); err != nil {
+			return nil, nil, bench, err
+		}
+	}
+	if err := binary.Read(r, binary.LittleEndian, &postN); err != nil {
+		return nil, nil, bench, err
+	}
+	post = make([]float32, postN)
+	for i := range post {
+		if err := binary.Read(r, binary.LittleEndian, &post[i]); err != nil {
+			return nil, nil, bench, err
+		}
+	}
+	return pre, post, bench, nil
+}
+
+func runToolRMSNorm(tool string, fc rmsnormCase) (pre, post []float32, err error) {
+	payload, err := encodeRMSNorm(fc)
+	if err != nil {
+		return nil, nil, err
+	}
+	cmd := exec.Command(tool)
+	cmd.Stdin = bytes.NewReader(payload)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, nil, fmt.Errorf("%v: %s", err, stderr.String())
+	}
+	pre, post, _, err = decodeRMSNorm(stdout.Bytes())
+	return pre, post, err
+}
+
+func runToolRMSNormBench(tool string, fc rmsnormCase, iters int) (pre, post []float32, dur time.Duration, err error) {
+	payload, err := encodeRMSNorm(fc)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	cmd := exec.Command(tool, fmt.Sprintf("--bench=%d", iters))
+	cmd.Stdin = bytes.NewReader(payload)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, nil, 0, fmt.Errorf("%v: %s", err, stderr.String())
+	}
+	return decodeRMSNorm(stdout.Bytes())
+}
+
+func runCUDARMSNorm(fc rmsnormCase) (pre, post []float32, err error) {
+	tool, err := findCUDAFwd()
+	if err != nil {
+		return nil, nil, err
+	}
+	return runToolRMSNorm(tool, fc)
+}
+
+func requireRMSNormExact(fc rmsnormCase) error {
+	goPre, goPost, err := runGoRMSNorm(fc)
+	if err != nil {
+		return fmt.Errorf("go: %w", err)
+	}
+	mPre, mPost, err := runCUDARMSNorm(fc)
+	if err != nil {
+		return fmt.Errorf("cuda: %w", err)
+	}
+	preM := suites.CompareF32Spectrum(goPre, mPre)
+	postM := suites.CompareF32Spectrum(goPost, mPost)
+	fmt.Printf("\n      pre  %s", suites.FormatSpectrum(preM))
+	fmt.Printf("\n      post %s", suites.FormatSpectrum(postM))
+	if preM.Band != suites.DetExactBit {
+		return fmt.Errorf("pre %s", suites.FormatSpectrum(preM))
+	}
+	if postM.Band != suites.DetExactBit {
+		return fmt.Errorf("post %s", suites.FormatSpectrum(postM))
+	}
+	return nil
+}
+
+func onesGamma(dim int) []float32 {
+	g := make([]float32, dim)
+	for i := range g {
+		g[i] = 1
+	}
+	return g
+}
+
+func makeRMSNormCase(cfg rmsnorm.Config, batch, seq int, dt core.DType, seed uint32, ones bool) (rmsnormCase, error) {
+	if err := cfg.Validate(); err != nil {
+		return rmsnormCase{}, err
+	}
+	fc := rmsnormCase{
+		batch: batch, seq: seq, cfg: cfg, dtype: dt, backend: core.BackendCPUTiled,
+		x: randInit(batch*seq, cfg.Dim, seed+1),
+	}
+	if ones {
+		fc.gamma = onesGamma(cfg.Dim)
+	} else {
+		fc.gamma = randInit(1, cfg.Dim, seed)
+		for i := range fc.gamma {
+			fc.gamma[i] = 0.5 + 0.5*fc.gamma[i]
+		}
+	}
+	return fc, nil
+}
+
+func caseRMSNormOnes2D() error {
+	cfg := rmsnorm.Config{Dim: 32}
+	fc, err := makeRMSNormCase(cfg, 2, 1, core.DTypeFloat32, 0x524d5301, true)
+	if err != nil {
+		return err
+	}
+	return requireRMSNormExact(fc)
+}
+
+func caseRMSNormSeq3D() error {
+	cfg := rmsnorm.Config{Dim: 24}
+	fc, err := makeRMSNormCase(cfg, 2, 3, core.DTypeFloat32, 0x524d5302, false)
+	if err != nil {
+		return err
+	}
+	return requireRMSNormExact(fc)
+}
+
+func caseRMSNormCustomEps() error {
+	cfg := rmsnorm.Config{Dim: 16, Eps: 1e-5}
+	fc, err := makeRMSNormCase(cfg, 1, 4, core.DTypeFloat32, 0x524d5303, false)
+	if err != nil {
+		return err
+	}
+	return requireRMSNormExact(fc)
+}
+
+func caseRMSNormAllDTypes() error {
+	// Big tokens×dim so host f64 work dominates tool/spawn noise (CUDA/C++ beat Go).
+	const batch, seq, benchIters = 8, 32, 80
+	cfg := rmsnorm.Config{Dim: 2048}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	if len(core.AllDTypes) != 34 {
+		return fmt.Errorf("expected 34 dtypes, got %d", len(core.AllDTypes))
+	}
+	cudaTool, err := findCUDAFwd()
+	if err != nil {
+		return err
+	}
+	cppTool, cppErr := findCppFwd()
+	haveCpp := cppErr == nil
+
+	nTok := batch * seq
+	fmt.Printf("\n      Go vs CUDA RMSNorm FormatNone×34 — exact_bit required")
+	fmt.Printf("\n      shape batch=%d seq=%d dim=%d  tokens=%d  iters=%d",
+		batch, seq, cfg.Dim, nTok, benchIters)
+	if haveCpp {
+		fmt.Printf("\n      speed: Go / C++ / CUDA — winner on warm forward")
+	}
+	fmt.Printf("\n      %-12s %-12s %7s %9s %9s %9s %8s %s\n",
+		"dtype", "band", "exact%", "go_µs", "cpp_µs", "cuda_µs", "winner", "vsGo")
+	fmt.Printf("      %s\n", strings.Repeat("-", 100))
+
+	var fails []string
+	var exactN, totalN int
+	winCount := map[string]int{}
+
+	for _, dt := range core.AllDTypes {
+		fc, err := makeRMSNormCase(cfg, batch, seq, dt, 0x524d5a34, false)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s: %v", dt, err))
+			fmt.Printf("      %-12s FAIL %v\n", dt, err)
+			continue
+		}
+		goPre, goPost, err := runGoRMSNorm(fc)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s go: %v", dt, err))
+			fmt.Printf("      %-12s FAIL go %v\n", dt, err)
+			continue
+		}
+		mPre, mPost, err := runCUDARMSNorm(fc)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cuda: %v", dt, err))
+			fmt.Printf("      %-12s FAIL cuda %v\n", dt, err)
+			continue
+		}
+		preM := suites.CompareF32Spectrum(goPre, mPre)
+		postM := suites.CompareF32Spectrum(goPost, mPost)
+		m := postM
+		if preM.Band < m.Band {
+			m = preM
+		}
+		exactN += m.ExactBits
+		totalN += m.N
+
+		goUS, err := benchGoUS(func() error {
+			_, _, e := runGoRMSNorm(fc)
+			return e
+		}, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s go bench: %v", dt, err))
+			continue
+		}
+
+		cppUS := 0.0
+		cppStr := "—"
+		if haveCpp {
+			_, _, cppDur, err := runToolRMSNormBench(cppTool, fc, benchIters)
+			if err != nil {
+				cppStr = "err"
+			} else {
+				cppUS = perIterUS(cppDur, benchIters)
+				cppStr = FormatUS(cppUS)
+			}
+		}
+
+		_, _, cudaDur, err := runToolRMSNormBench(cudaTool, fc, benchIters)
+		if err != nil {
+			fails = append(fails, fmt.Sprintf("%s cuda bench: %v", dt, err))
+			fmt.Printf("      %-12s %-12s %6.2f%% %9s %9s %9s %8s %s\n",
+				dt, m.Band, m.ExactPct, FormatUS(goUS), cppStr, "?", "?", err)
+			continue
+		}
+		cudaUS := perIterUS(cudaDur, benchIters)
+
+		names := []string{"Go", "CUDA"}
+		uss := []float64{goUS, cudaUS}
+		if haveCpp && cppUS > 0 {
+			names = []string{"Go", "C++", "CUDA"}
+			uss = []float64{goUS, cppUS, cudaUS}
+		}
+		winner, _, vsGo := pickFastest(names, uss)
+		winCount[winner]++
+		vsGoStr := "baseline"
+		if winner != "Go" {
+			vsGoStr = fmt.Sprintf("%s %+0.1f%%", winner, vsGo)
+		}
+		fmt.Printf("      %-12s %-12s %6.2f%% %9s %9s %9s %8s %s\n",
+			dt, m.Band, m.ExactPct, FormatUS(goUS), cppStr, FormatUS(cudaUS), winner, vsGoStr)
+
+		if m.Band != suites.DetExactBit {
+			fails = append(fails, fmt.Sprintf("%s: %s", dt, suites.FormatSpectrum(m)))
+		}
+	}
+
+	overallExact := 0.0
+	if totalN > 0 {
+		overallExact = 100.0 * float64(exactN) / float64(totalN)
+	}
+	fmt.Printf("      %s\n", strings.Repeat("-", 100))
+	fmt.Printf("      overall exact_bits=%.2f%%  (aim=100%% vs Go)\n", overallExact)
+	parts := []string{}
+	for _, n := range []string{"Go", "C++", "CUDA"} {
+		if winCount[n] > 0 {
+			parts = append(parts, fmt.Sprintf("%s=%d", n, winCount[n]))
+		}
+	}
+	fmt.Printf("      wins: %s\n", strings.Join(parts, " "))
+	fmt.Printf("      note: γ FormatNone×34 + CUDA HW f64 RMS (exact_bit vs Go)")
+
+	if len(fails) > 0 {
+		return fmt.Errorf("%d rmsnorm-dtype issues: %s", len(fails), strings.Join(fails, " | "))
+	}
+	return nil
+}

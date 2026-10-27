@@ -365,6 +365,16 @@ func caseReLUExact() error {
 	})
 }
 
+func randInit(rows, cols int, seed uint32) []float32 {
+	w := make([]float32, rows*cols)
+	s := seed
+	for i := range w {
+		s = s*1664525 + 1013904223
+		w[i] = float32(int32(s%401)-200) / 200.0
+	}
+	return w
+}
+
 func makeSharedInit(out, in, batch int) (W, x []float32, bias []float64) {
 	W = make([]float32, out*in)
 	x = make([]float32, batch*in)

@@ -12,6 +12,7 @@ func TestGoVCudaProxyTrain(t *testing.T) {
 		parallel.ModeTweenSplitLinear,
 		parallel.ModeTweenSplitFastProxy,
 		parallel.ModeTweenSplitLinearCache,
+		parallel.ModeTweenSplitHeadProxyAsync,
 	} {
 		t.Run(mode.String(), func(t *testing.T) {
 			for _, c := range gvc.CasesProxyTrain(mode) {
@@ -31,6 +32,7 @@ func TestGoVCudaProxyVolumeTrain(t *testing.T) {
 		parallel.ModeTweenSplitLinear,
 		parallel.ModeTweenSplitFastProxy,
 		parallel.ModeTweenSplitLinearCache,
+		parallel.ModeTweenSplitHeadProxyAsync,
 	} {
 		t.Run(m.String(), func(t *testing.T) {
 			for _, c := range gvc.CasesProxyVolumes(m) {

@@ -59,9 +59,3 @@ func compareProxyVolume(a, b meshClockOut) error {
 	return fmt.Errorf("compareProxyVolume: proxy volume credit not implemented on go_v_cuda yet")
 }
 
-func applyModeTweenSplitVolume(g *architecture.Grid, fwd *forward.Result[float32], target *core.Tensor[float32], lr float64) (float64, error) {
-	return 0, fmt.Errorf("applyModeTweenSplitVolume: not implemented on go_v_cuda yet")
-}
-
-
-

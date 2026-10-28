@@ -615,6 +615,31 @@ func runMeshFamily(pc polyCase, dt core.DType, z, y, x int, credit parallel.Trai
 }
 func CasesMeshBPTrain() []Case { return meshTrainCases(parallel.ModeMeshBP) }
 func CasesMeshTweenClockTrain() []Case { return meshTrainCases(parallel.ModeMeshTween) }
+func CasesMeshTweenChainClockTrain() []Case {
+	cases := meshTrainCases(parallel.ModeMeshTweenChain)
+	return append(cases, Case{Name: "MeshTweenChain equals MeshBP all 23 families Float32", Run: func() error {
+		for _, pc := range polyTrainKinds() {
+			f, err := meshFactory(pc, core.DTypeFloat32, 2, 1, 1)
+			if err != nil {
+				return err
+			}
+			f.credit = parallel.ModeMeshBP
+			bp, err := runCUDAMeshClock(encodeMeshClock(f), 0)
+			if err != nil {
+				return err
+			}
+			f.credit = parallel.ModeMeshTweenChain
+			chain, err := runCUDAMeshClock(encodeMeshClock(f), 0)
+			if err != nil {
+				return err
+			}
+			if err = meshCompareReplay(bp, chain); err != nil {
+				return fmt.Errorf("%s: %w", pc.name, err)
+			}
+		}
+		return nil
+	}})
+}
 
 func meshTrainCases(credit parallel.TrainMode) []Case {
 	mode := credit.String()

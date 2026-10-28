@@ -16,12 +16,9 @@ func withTypedVolumes(base, parent []Case, prefix string) []Case {
 	return base
 }
 
-// denseMeshCreditDTypes — Dense mesh-clock ×34. chain=false → MeshTween (MTW1);
-// chain=true lands with MeshTweenChain (MTC1) once that wire is signed.
+// denseMeshCreditDTypes — Dense mesh-clock ×34.
+// chain=false → MeshTween (MTW1); chain=true → MeshTweenChain (MTC1 ≡ MeshBP).
 func denseMeshCreditDTypes(chain bool, depth int) error {
-	if chain {
-		return fmt.Errorf("denseMeshCreditDTypes(chain=true): MeshTweenChain wire not signed yet")
-	}
 	return runTweenVolumeSpectrum(func(dtype core.DType) error {
 		cells := make([]volCell, depth)
 		for i := range cells {
@@ -29,6 +26,28 @@ func denseMeshCreditDTypes(chain bool, depth int) error {
 		}
 		x := randInit(1, 4, 0x4d433058)
 		target := []float32{0.1, 0.2, -0.3, 0.4}
+		if chain {
+			goO, err := runGoDenseMeshBP(depth, 1, 1, 1, 1, depth+2, cells, x, target, 0.01)
+			if err != nil {
+				return err
+			}
+			payload, err := encodeDenseMTC1(depth, 1, 1, 1, 1, depth+2, cells, x, target, 0.01)
+			if err != nil {
+				return err
+			}
+			got, _, err := runCUDAMTC1(payload, 0)
+			if err != nil {
+				return err
+			}
+			if err := compareMeshBP(goO, meshbpOut{loss: got.loss, Ws: got.Ws}, true); err != nil {
+				return err
+			}
+			bench, _, err := runCUDAMTC1(payload, 2)
+			if err != nil {
+				return err
+			}
+			return compareMeshTweenChain(got, bench, true)
+		}
 		goO, err := runGoDenseMeshTween(depth, 1, 1, 1, 1, depth+2, cells, x, target, 0.01)
 		if err != nil {
 			return err

@@ -228,9 +228,10 @@ func kpRunMode(mode parallel.TrainMode, dt core.DType, makeFixture func(core.DTy
 	if err != nil {
 		return err
 	}
-	if proxyVariant(mode) > 0 || stepProxyVariant(mode) >= 2 {
+	if proxyVariant(mode) > 0 || stepProxyVariant(mode) > 0 {
 		// Proxy leaf/Line epochs accumulate CUDA float2 vs Go drift; keep the
 		// industry-to-exact spectrum (shapes/counts exact; same-backend replay below).
+		// Includes StepTweenSplitHeadProxy (variant 1) — same floor as leaf HeadProxy.
 		refVolume := meshClockOut{loss: ref.loss, weights: ref.WAfter, grads: make([]meshTensor, len(ref.WAfter))}
 		gotVolume := meshClockOut{loss: fresh.loss, weights: fresh.WAfter, grads: make([]meshTensor, len(fresh.WAfter))}
 		if err = compareProxyVolume(refVolume, gotVolume); err != nil {

@@ -11,6 +11,7 @@ func TestGoVCudaMeshSplitModes(t *testing.T) {
 		parallel.ModeMeshTweenSplit,
 		parallel.ModeMeshTweenAlt,
 		parallel.ModeMeshTweenSplitFastProxy,
+		parallel.ModeMeshTweenSplitSparse,
 	} {
 		t.Run(mode.String(), func(t *testing.T) {
 			for _, c := range gvc.CasesMeshSplitMode(mode) {

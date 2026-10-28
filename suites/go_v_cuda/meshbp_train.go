@@ -816,14 +816,6 @@ func meshEdgeCases(credit parallel.TrainMode) []Case {
 }
 
 
-// MeshTween local credit lands with MGW1; MeshBP uses step. Backward + SGD.
-func meshGoLocalCredit(g *architecture.Grid, st *step.State[float32], gap *core.Tensor[float32], lr float64, mode parallel.TrainMode) error {
-	if mode == parallel.ModeMeshTween {
-		return meshGoTween(g, st, gap, lr)
-	}
-	return fmt.Errorf("mesh local credit %v not wired on CUDA MeshBP suite", mode)
-}
-
 // Mirror the mesh last-tick contract with Go's concrete backward/SGD dispatch.
 // Sequential and Residual use Go's public local-Tween leaf collector.
 func meshGoTween(g *architecture.Grid, st *step.State[float32], gap *core.Tensor[float32], lr float64) error {

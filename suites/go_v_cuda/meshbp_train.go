@@ -32,6 +32,7 @@ import (
 	"github.com/openfluke/welvet/layers/sequential"
 	"github.com/openfluke/welvet/layers/softmax"
 	"github.com/openfluke/welvet/layers/swiglu"
+	"github.com/openfluke/welvet/runtime/backward"
 	"github.com/openfluke/welvet/runtime/step"
 	"github.com/openfluke/welvet/runtime/training"
 )
@@ -613,6 +614,7 @@ func runMeshFamily(pc polyCase, dt core.DType, z, y, x int, credit parallel.Trai
 	return meshCompareReplay(got, bench)
 }
 func CasesMeshBPTrain() []Case { return meshTrainCases(parallel.ModeMeshBP) }
+func CasesMeshTweenClockTrain() []Case { return meshTrainCases(parallel.ModeMeshTween) }
 
 func meshTrainCases(credit parallel.TrainMode) []Case {
 	mode := credit.String()
@@ -789,7 +791,59 @@ func meshEdgeCases(credit parallel.TrainMode) []Case {
 }
 
 
-// MeshTween local credit lands with MGW1; MeshBP uses step.Backward + SGD.
-func meshGoLocalCredit(_ *architecture.Grid, _ *step.State[float32], _ *core.Tensor[float32], _ float64, mode parallel.TrainMode) error {
+// MeshTween local credit lands with MGW1; MeshBP uses step. Backward + SGD.
+func meshGoLocalCredit(g *architecture.Grid, st *step.State[float32], gap *core.Tensor[float32], lr float64, mode parallel.TrainMode) error {
+	if mode == parallel.ModeMeshTween {
+		return meshGoTween(g, st, gap, lr)
+	}
 	return fmt.Errorf("mesh local credit %v not wired on CUDA MeshBP suite", mode)
+}
+
+// Mirror the mesh last-tick contract with Go's concrete backward/SGD dispatch.
+// Sequential and Residual use Go's public local-Tween leaf collector.
+func meshGoTween(g *architecture.Grid, st *step.State[float32], gap *core.Tensor[float32], lr float64) error {
+	if lr == 0 {
+		return nil
+	}
+	last := len(st.HistoryIn) - 1
+	for i := len(g.Cells) - 1; i >= 0; i-- {
+		c := &g.Cells[i]
+		input, pre, post := st.HistoryIn[last][i], st.HistoryPre[last][i], st.LayerData[i]
+		if c.Layer.IsDisabled || input == nil || pre == nil || post == nil {
+			continue
+		}
+		switch c.Op.(type) {
+		case *sequential.Layer, *residual.Layer:
+			wrapper, err := parallel.NewStack(c.Op)
+			if err != nil {
+				return err
+			}
+			wrapper.Exec.Backend = core.BackendCPUTiled
+			wrapper.Exec.MultiCore = false
+			if err = parallel.TrainStack(wrapper, gap, input, pre, parallel.ModeTween, lr); err != nil {
+				return err
+			}
+		default:
+			projected := projectGapF32(gap, post.Shape...)
+			_, dw, err := backward.Cell(c, projected, input, pre)
+			if err != nil {
+				return err
+			}
+			if dw != nil && dw.Len() > 0 {
+				wrapper, err := parallel.NewStack(c.Op)
+				if err != nil {
+					return err
+				}
+				if err = parallel.ApplyGradSGDStack(wrapper, dw, lr*0.5); err != nil {
+					return err
+				}
+			}
+		}
+		next := core.NewTensor[float32](input.Shape...)
+		if next.Len() == gap.Len() {
+			copy(next.Data, gap.Data)
+		}
+		gap = next
+	}
+	return nil
 }

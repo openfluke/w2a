@@ -1,8 +1,6 @@
 package go_v_cuda
 
 import (
-	"fmt"
-
 	"github.com/openfluke/welvet/architecture"
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/parallel"
@@ -54,8 +52,3 @@ type meshClockOut struct {
 	weights   [][]float32
 	history   [][][]meshTensor // tick / cell / input, pre, post (MeshBP clock)
 }
-
-func compareProxyVolume(a, b meshClockOut) error {
-	return fmt.Errorf("compareProxyVolume: proxy volume credit not implemented on go_v_cuda yet")
-}
-

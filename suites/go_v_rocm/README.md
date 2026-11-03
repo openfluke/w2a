@@ -1,12 +1,10 @@
 # go_v_rocm — Go ↔ welvet.rocm determinism
 
-Sibling of `go_v_cuda` / `go_v_metal` / `go_v_cpp`.
+Leaf FormatNone forward suites (mirror of `go_v_cuda`).
 
-Engine: `../welvet.rocm` (HIP). Checklist:
-`../welvet.rocm/docs/TRAINING_CHECKLIST.md` (mirror of cuda → board **0.79**).
+```bash
+cd ../welvet.rocm
+./scripts/linux_build_w2a.sh --leaf-fwd-all
+```
 
-**M0:** smoke via `welvet.rocm/scripts/linux_build_w2a.sh --smoke`.
-
-As each leaf / NormalBP / TrainMode lands in the C++ engine, add suite files here
-and `tests/go_v_rocm/*_test.go` using the same spectrum helpers as `go_v_cuda`
-(`suites/spectrum.go`, `suites/determinism.go`).
+Env: `WELVET_ROCM_DENSE_FWD` → `welvet.rocm/build/welvet_dense_fwd`.

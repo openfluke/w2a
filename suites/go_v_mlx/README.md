@@ -13,17 +13,20 @@ Sibling of `go_v_qnn`. Validates **welvet.mlx** leaf forwards — **no training*
 
 Sign-off checklist: [`welvet.mlx/docs/FORWARD_CHECKLIST.md`](../../../welvet.mlx/docs/FORWARD_CHECKLIST.md).
 
-## Dense (complete)
+## Coverage (0.15 — 14 leaves)
 
-| Case | What |
-|------|------|
-| Dense caps | all compute dtypes + float64 rejected |
-| Dense f32 large | B=32 in=out=512 prepare/exec + Go accuracy |
-| Dense ALL dtypes | Session prepare/exec for every Dense caps dtype |
-| Dense Go layer | `SyncToMLX` → `PrepareMLX` → `BackendMLX` Forward (f32/f16/bf16) |
+| Layer | Caps dtypes | Notes |
+|-------|-------------|-------|
+| Dense | floats + ints + c64 | Session + Go Sync/Forward floats |
+| Softmax / RMSNorm / LayerNorm | f32/f16/bf16 | Session + Go accuracy on floats |
+| CNN2 / CNN3 / ConvT2 / ConvT3 | floats + ints | Session; float 1×1 vs Go where easy |
+| LSTM / SwiGLU / MHA | f32/f16/bf16 | Session exec+finite |
+| Embedding | floats + ints | Session; float gather vs Go |
+| Residual | floats + ints + c64 | Session elementwise add |
+| Sequential | f32 tower | Session Dense stack |
 
 ```bash
-go test ./tests/go_v_mlx -run TestGoVMLXDense -v -count=1
+go test ./tests/go_v_mlx -run 'TestGoVMLX$|TestGoVMLXAll|TestGoVMLXDense' -v -count=1
 ```
 
 ## Gate

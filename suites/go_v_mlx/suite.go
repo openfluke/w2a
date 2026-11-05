@@ -24,10 +24,22 @@ func Cases() []Case {
 		{Name: "Dense ALL dtypes — Session prepare/exec vs Go", Run: caseDenseAllDtypes},
 		{Name: "Dense Go layer — SyncToMLX + BackendMLX (f32/f16/bf16)", Run: caseDenseGoLayer},
 		{Name: "Softmax f32 64×4096 — transfer/prep/exec/e2e + accuracy", Run: caseLayerSoftmax},
+		{Name: "Softmax ALL float dtypes — Session × f32/f16/bf16", Run: caseSoftmaxAllDtypes},
 		{Name: "RMSNorm f32 [8,128,512] — transfer/prep/exec/e2e + accuracy", Run: caseLayerRMSNorm},
+		{Name: "RMSNorm ALL float dtypes — Session × f32/f16/bf16", Run: caseRMSNormAllDtypes},
 		{Name: "LayerNorm f32 [8,128,512] — transfer/prep/exec/e2e + accuracy", Run: caseLayerLayerNorm},
+		{Name: "LayerNorm ALL float dtypes — Session × f32/f16/bf16", Run: caseLayerNormAllDtypes},
+		{Name: "CNN2 ALL dtypes — Session × floats+ints", Run: caseCNN2AllDtypes},
+		{Name: "CNN3 ALL dtypes — Session × floats+ints", Run: caseCNN3AllDtypes},
+		{Name: "ConvT2 ALL dtypes — Session × floats+ints", Run: caseConvT2AllDtypes},
+		{Name: "ConvT3 ALL dtypes — Session × floats+ints", Run: caseConvT3AllDtypes},
+		{Name: "LSTM ALL float dtypes — Session × f32/f16/bf16", Run: caseLSTMAllDtypes},
+		{Name: "Embedding ALL dtypes — Session × floats+ints", Run: caseEmbeddingAllDtypes},
 		{Name: "Residual f32 n=65536 — transfer/prep/exec/e2e + accuracy", Run: caseLayerResidual},
-		{Name: "Sequential Dense tower dim=64 depth=3 — go/mlx", Run: caseSequentialTower},
+		{Name: "Residual ALL dtypes — Session × floats+ints+c64", Run: caseResidualAllDtypes},
+		{Name: "SwiGLU ALL float dtypes — Session × f32/f16/bf16", Run: caseSwiGLUAllDtypes},
+		{Name: "MHA ALL float dtypes — Session × f32/f16/bf16", Run: caseMHAAllDtypes},
+		{Name: "Sequential Dense tower dim=64 depth=3 — go/mlx f32", Run: caseSequentialF32},
 	}
 }
 

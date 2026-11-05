@@ -17,6 +17,11 @@ func TestGoVMLX(t *testing.T) {
 	}
 }
 
+// TestGoVMLXAll is an alias that runs every layer × caps dtype case.
+func TestGoVMLXAll(t *testing.T) {
+	TestGoVMLX(t)
+}
+
 // TestGoVMLXCaps runs the caps inventory case only.
 func TestGoVMLXCaps(t *testing.T) {
 	if !nativemlx.Available() {

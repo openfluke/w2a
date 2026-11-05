@@ -26,3 +26,15 @@ func TestGoVMLXCaps(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestGoVMLXDense runs Dense caps + f32 large + all-dtype matrix + Go layer path.
+func TestGoVMLXDense(t *testing.T) {
+	if !nativemlx.Available() {
+		t.Skip("libwelvet_mlx not available")
+	}
+	for _, n := range []int{2, 3, 4, 5} {
+		if err := gvm.RunOne(n); err != nil {
+			t.Fatalf("case %d: %v", n, err)
+		}
+	}
+}

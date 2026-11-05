@@ -35,66 +35,6 @@ func caseCapsInventory() error {
 	return nil
 }
 
-func caseLayerDense() error {
-	sess, err := openSess()
-	if err != nil {
-		return err
-	}
-	const batch, in, out = 32, 512, 512
-	r := LayerReport{Name: "dense", Geom: fmt.Sprintf("B=%d in=%d out=%d", batch, in, out)}
-	W := make([]float32, out*in)
-	bias := make([]float32, out)
-	x := make([]float32, batch*in)
-	fillRand(W, 1, 0.02)
-	fillRand(bias, 2, 0.01)
-	fillRand(x, 3, 0.1)
-	yM := make([]float32, batch*out)
-
-	r.TransferUS = timeUS(func() { _ = append([]float32(nil), W...) })
-
-	var prepErr error
-	_ = timeUS(func() { prepErr = sess.DensePrepareF32(batch, in, out, W, bias) })
-	if prepErr != nil {
-		return prepErr
-	}
-	takePhase(&r, sess)
-
-	_ = sess.DenseExecuteF32(x, yM)
-	execUS, err := benchUS(func() error { return sess.DenseExecuteF32(x, yM) }, 10)
-	if err != nil {
-		return err
-	}
-	r.ExecUS = execUS
-	finishE2E(&r)
-
-	goL, err := dense.NewConfigured(in, out, core.ActivationLinear, core.DTypeFloat32, quant.FormatNone, W)
-	if err != nil {
-		return err
-	}
-	bf64 := make([]float64, out)
-	for i := range bias {
-		bf64[i] = float64(bias[i])
-	}
-	goL.Weights.Bias = bf64
-	goL.Exec.Backend = core.BackendCPUTiled
-	tx := core.NewTensor[float32](batch, in)
-	copy(tx.Data, x)
-	_, goPost, err := dense.Forward(goL, tx)
-	if err != nil {
-		return err
-	}
-	fillAccuracy(&r, goPost.Data, yM)
-	r.GoExecUS, _ = benchUS(func() error {
-		_, _, e := dense.Forward(goL, tx)
-		return e
-	}, 10)
-	printReport(r)
-	if r.MaxAbs > 1e-3 {
-		return fmt.Errorf("dense max|Δ|=%g too high", r.MaxAbs)
-	}
-	return nil
-}
-
 func caseLayerSoftmax() error {
 	sess, err := openSess()
 	if err != nil {

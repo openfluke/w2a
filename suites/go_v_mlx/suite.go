@@ -19,7 +19,10 @@ type Case struct {
 func Cases() []Case {
 	return []Case{
 		{Name: "Caps — README MLX layers × float32", Run: caseCapsInventory},
+		{Name: "Dense caps — all compute dtypes (+ float64 rejected)", Run: caseDenseCaps},
 		{Name: "Dense f32 B=32 in=512 out=512 — transfer/prep/exec/e2e + accuracy", Run: caseLayerDense},
+		{Name: "Dense ALL dtypes — Session prepare/exec vs Go", Run: caseDenseAllDtypes},
+		{Name: "Dense Go layer — SyncToMLX + BackendMLX (f32/f16/bf16)", Run: caseDenseGoLayer},
 		{Name: "Softmax f32 64×4096 — transfer/prep/exec/e2e + accuracy", Run: caseLayerSoftmax},
 		{Name: "RMSNorm f32 [8,128,512] — transfer/prep/exec/e2e + accuracy", Run: caseLayerRMSNorm},
 		{Name: "LayerNorm f32 [8,128,512] — transfer/prep/exec/e2e + accuracy", Run: caseLayerLayerNorm},

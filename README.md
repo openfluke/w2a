@@ -332,11 +332,11 @@ Platform `.so` trees stay **gitignored** — fetch them from the release.
 
 ```bash
 cd w2a
-go run .                 # run suites → logs/suite.txt (+ export PDF if needed)
-./release.sh --build-cabi   # commit source, push, upload suite + CABI tarball
-./release.sh --dry-run
-./scripts/pack_cabi_linux.sh --build   # pack only
-./scripts/fetch_cabi.sh                # download CABI into python/ (no Go)
+./release.sh --cabi-only     # publish linux CABI tarball only (no suite.txt needed)
+go run .                     # optional: suites → logs/suite.txt
+./release.sh --build-cabi    # full release: suite txt/pdf + CABI
+./scripts/pack_cabi_linux.sh --build
+./scripts/fetch_cabi.sh      # download CABI into python/ (no Go)
 # or:  PYTHONPATH=python/src python -m welvet.fetch_cabi
 ```
 

@@ -17,6 +17,7 @@
 #   ./release.sh --pdf-only      # regenerate suite.pdf from suite.txt, then exit
 #   ./release.sh --build-cabi    # build linux CABI before packing
 #   ./release.sh --skip-cabi     # do not attach CABI tarball
+#   ./release.sh --cabi-only     # publish CABI tarball only (no suite.txt required)
 #
 # Needs: git, and either gh (authenticated) or GITHUB_TOKEN.
 # Optional: soffice/libreoffice to rebuild suite.pdf from suite.txt.
@@ -37,6 +38,7 @@ NO_PUSH=0
 PDF_ONLY=0
 BUILD_CABI=0
 SKIP_CABI=0
+CABI_ONLY=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -45,8 +47,9 @@ for arg in "$@"; do
     --pdf-only) PDF_ONLY=1 ;;
     --build-cabi) BUILD_CABI=1 ;;
     --skip-cabi) SKIP_CABI=1 ;;
+    --cabi-only) CABI_ONLY=1 ;;
     -h|--help)
-      sed -n '2,28p' "$0"
+      sed -n '2,30p' "$0"
       exit 0
       ;;
     *)
@@ -55,6 +58,73 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+read_cabi_version() {
+  python3 - <<'PY'
+from pathlib import Path
+import re
+text = Path("python/src/welvet/__init__.py").read_text(encoding="utf-8")
+m = re.search(r'ENGINE_VERSION\s*=\s*"([^"]+)"', text)
+print(m.group(1) if m else "0.0.0")
+PY
+}
+
+pack_cabi_asset() {
+  local flags=()
+  [[ "$BUILD_CABI" -eq 1 ]] && flags+=(--build)
+  local log out
+  log="$(mktemp)"
+  if ! "$ROOT/scripts/pack_cabi_linux.sh" "${flags[@]}" >"$log" 2>&1; then
+    cat "$log" >&2
+    rm -f "$log"
+    return 1
+  fi
+  cat "$log" >&2
+  out="$(tail -1 "$log")"
+  rm -f "$log"
+  if [[ -f "$out" ]]; then
+    echo "$out"
+    return 0
+  fi
+  return 1
+}
+
+publish_cabi_only_release() {
+  local tag="$1"
+  local asset="$2"
+  local notes
+  notes="$(cat <<EOF
+## Welvet Python CABI ${tag}
+
+Prebuilt Linux amd64 CABI for \`pip\` / ctypes (\`welvet.so\` + accel siblings).
+Binaries are **not** committed to git — fetch from this release.
+
+\`\`\`bash
+cd w2a
+./scripts/fetch_cabi.sh ${tag}
+# or: PYTHONPATH=python/src python -m welvet.fetch_cabi ${tag}
+\`\`\`
+
+Asset: \`$(basename "$asset")\`
+EOF
+)"
+  if have_gh; then
+    if release_exists "$tag"; then
+      echo "  updating existing release ${tag}…"
+      gh release upload "$tag" "$asset" --repo "$REPO_SLUG" --clobber
+      gh release edit "$tag" --repo "$REPO_SLUG" --title "Welvet CABI ${tag}" --notes "$notes"
+    else
+      echo "  creating release ${tag}…"
+      gh release create "$tag" "$asset" --repo "$REPO_SLUG" \
+        --title "Welvet CABI ${tag}" --notes "$notes"
+    fi
+    return
+  fi
+  # curl path: reuse create_or_update_release with dummy suite assets skipped —
+  # require gh for cabi-only to keep this path simple.
+  echo "ERROR: --cabi-only currently needs gh (GitHub CLI)." >&2
+  exit 1
+}
 
 read_version() {
   python3 - "$WELVET_README" <<'PY'
@@ -298,6 +368,70 @@ mkdir -p "$DIST"
 TXT_ASSET="$DIST/$TXT_ASSET_NAME"
 PDF_ASSET="$DIST/$PDF_ASSET_NAME"
 
+# ---------------------------------------------------------------------------
+# CABI-only: no suite.txt required
+# ---------------------------------------------------------------------------
+if [[ "$CABI_ONLY" -eq 1 ]]; then
+  CABI_VER="$(read_cabi_version)"
+  CABI_TAG="cabi-v${CABI_VER}"
+  echo "════════════════════════════════════════"
+  echo " w2a CABI-only release"
+  echo " cabi:     ${CABI_VER}  → tag ${CABI_TAG}"
+  echo " welvet:   ${VERSION}  (${EARNED}/100)"
+  echo " repo:     ${REPO_SLUG}"
+  echo "════════════════════════════════════════"
+
+  # Build if linux_amd64/welvet.so missing, or user passed --build-cabi.
+  if [[ ! -f "$ROOT/python/src/welvet/linux_amd64/welvet.so" ]]; then
+    BUILD_CABI=1
+  fi
+  if ! CABI_ASSET="$(pack_cabi_asset)"; then
+    echo "ERROR: failed to pack CABI — try: ./release.sh --cabi-only --build-cabi" >&2
+    exit 1
+  fi
+  echo "→ cabi  $(du -h "$CABI_ASSET" | cut -f1)  →  $(basename "$CABI_ASSET")"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "dry-run: would release ${CABI_TAG} with $(basename "$CABI_ASSET")"
+    exit 0
+  fi
+
+  if [[ "$NO_PUSH" -eq 1 ]]; then
+    echo "→ --no-push: asset ready at $CABI_ASSET"
+    exit 0
+  fi
+
+  need_publish_tools
+  echo "→ pushing main (source only)…"
+  if [[ -n "$(git status --porcelain)" ]]; then
+    git add -A
+    git reset -q -- logs/ dist/ python/src/welvet/linux_*/ python/src/welvet/macos_*/ python/src/welvet/windows_*/ python/src/welvet/android_*/ 2>/dev/null || true
+    if [[ -n "$(git diff --cached --name-only)" ]]; then
+      git commit -m "Release Welvet CABI ${CABI_TAG}
+
+Prebuilt linux_amd64 CABI published on GitHub Release (binaries not committed)."
+    fi
+  fi
+  git push origin HEAD
+
+  if git rev-parse "$CABI_TAG" >/dev/null 2>&1; then
+    echo "  tag ${CABI_TAG} already exists locally"
+  else
+    git tag -a "$CABI_TAG" -m "Welvet Python CABI ${CABI_VER}"
+  fi
+  git push origin "$CABI_TAG" 2>/dev/null || git push origin "refs/tags/${CABI_TAG}"
+
+  publish_cabi_only_release "$CABI_TAG" "$CABI_ASSET"
+  echo ""
+  echo "════════════════════════════════════════"
+  echo " Done · ${CABI_TAG}"
+  echo " Release: https://github.com/${REPO_SLUG}/releases/tag/${CABI_TAG}"
+  echo " CABI:    https://github.com/${REPO_SLUG}/releases/latest/download/$(basename "$CABI_ASSET")"
+  echo " Fetch:   ./scripts/fetch_cabi.sh ${CABI_TAG}"
+  echo "════════════════════════════════════════"
+  exit 0
+fi
+
 echo "════════════════════════════════════════"
 echo " w2a release"
 echo " version:  ${VERSION}  (${EARNED}/100)"
@@ -307,7 +441,8 @@ echo "════════════════════════�
 
 if [[ ! -f "$SUITE_TXT" ]]; then
   echo "ERROR: missing $SUITE_TXT" >&2
-  echo "  run suites first:  cd welvet/w2a && go run ." >&2
+  echo "  run suites first:  cd w2a && go run ." >&2
+  echo "  or CABI binaries only:  ./release.sh --cabi-only" >&2
   exit 1
 fi
 
@@ -327,18 +462,12 @@ echo "→ suite.pdf  $(du -h "$SUITE_PDF" | cut -f1)  →  ${PDF_ASSET_NAME}"
 
 CABI_ASSET=""
 if [[ "$SKIP_CABI" -eq 0 && "$PDF_ONLY" -eq 0 ]]; then
-  PACK_FLAGS=()
-  [[ "$BUILD_CABI" -eq 1 ]] && PACK_FLAGS+=(--build)
-  if CABI_ASSET="$("$ROOT/scripts/pack_cabi_linux.sh" "${PACK_FLAGS[@]}" 2>&1 | tee /dev/stderr | tail -1)"; then
-    if [[ ! -f "$CABI_ASSET" ]]; then
-      echo "  note: CABI pack did not produce an archive — continuing without it"
-      CABI_ASSET=""
-    else
-      echo "→ cabi      $(du -h "$CABI_ASSET" | cut -f1)  →  $(basename "$CABI_ASSET")"
-    fi
+  if CABI_ASSET="$(pack_cabi_asset)"; then
+    echo "→ cabi      $(du -h "$CABI_ASSET" | cut -f1)  →  $(basename "$CABI_ASSET")"
   else
     echo "  note: CABI pack skipped/failed — release will omit binary tarball"
     echo "        build with: ./scripts/pack_cabi_linux.sh --build"
+    echo "        or:         ./release.sh --cabi-only"
     CABI_ASSET=""
   fi
 fi

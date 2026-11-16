@@ -27,7 +27,29 @@ sync_native linux_amd64 "$WELVET_ROOT/native/rocm/linux_x86_64/libwelvet_rocm.so
 sync_native linux_amd64 "$WELVET_ROOT/native/vulkan/linux_x86_64/libwelvet_vulkan.so" libwelvet_vulkan.so
 sync_native linux_amd64 "$WELVET_ROOT/native/cpp/linux_amd64/libwelvet.so" libwelvet.so
 sync_native windows_amd64 "$WELVET_ROOT/native/cuda/windows_amd64/libwelvet_cuda.dll" libwelvet_cuda.dll
+# macOS arm64 only — Metal (dlopen) + MLX/nativecpp (cgo @rpath)
 sync_native macos_arm64 "$WELVET_ROOT/native/metal/darwin_arm64/libwelvet_metal.dylib" libwelvet_metal.dylib
+sync_native macos_arm64 "$WELVET_ROOT/native/mlx/darwin_arm64/libwelvet_mlx.dylib" libwelvet_mlx.dylib
+sync_native macos_arm64 "$WELVET_ROOT/native/cpp/darwin_arm64/libwelvet.dylib" libwelvet.dylib
+
+# Point packaged macos_arm64 welvet.dylib at sibling dylibs (@loader_path), not build-tree rpaths.
+fix_macos_arm64_rpaths() {
+	local dylib="$DST/macos_arm64/welvet.dylib"
+	[[ -f "$dylib" ]] || return 0
+	command -v install_name_tool >/dev/null 2>&1 || return 0
+	command -v otool >/dev/null 2>&1 || return 0
+	# Drop absolute build-tree rpaths; keep / add @loader_path for shipped siblings.
+	while IFS= read -r p; do
+		[[ -n "$p" ]] || continue
+		[[ "$p" == "@loader_path" ]] && continue
+		install_name_tool -delete_rpath "$p" "$dylib" 2>/dev/null || true
+	done < <(otool -l "$dylib" | awk '/LC_RPATH/{p=1} p&&/path/{sub(/^.*path /,""); sub(/ \(offset.*/,""); print; p=0}')
+	install_name_tool -add_rpath "@loader_path" "$dylib" 2>/dev/null || true
+	echo "  rpath → @loader_path on $dylib"
+	otool -l "$dylib" | awk '/LC_RPATH/{p=1} p&&/path/{print; p=0}'
+}
+fix_macos_arm64_rpaths
 
 echo "Mirrored $SRC → $DST (+ native accel siblings when present)"
 ls -lh "$DST"/*/welvet.* 2>/dev/null | head -20 || true
+ls -lh "$DST"/macos_arm64/libwelvet*.dylib 2>/dev/null || true

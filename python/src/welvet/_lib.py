@@ -59,17 +59,31 @@ def _pin_native_env(lib_dir: Path) -> None:
         ("WELVET_ROCM_LIBRARY", "libwelvet_rocm.so"),
         ("WELVET_VULKAN_LIBRARY", "libwelvet_vulkan.so"),
         ("WELVET_METAL_LIBRARY", "libwelvet_metal.dylib"),
+        ("WELVET_MLX_LIBRARY", "libwelvet_mlx.dylib"),
     ]
     for env, name in pairs:
         cand = lib_dir / name
         if cand.is_file():
             os.environ.setdefault(env, str(cand))
-    # nativecpp is linked with rpath into the CABI build tree; also allow
-    # a sibling libwelvet.so shipped in the Python package platform dir.
-    cpp = lib_dir / ("libwelvet.dll" if sysname == "windows" else "libwelvet.so")
-    if cpp.is_file():
+    # nativecpp / mlx are cgo-linked with @rpath; keep sibling dir on the loader path.
+    siblings = []
+    for name in (
+        "libwelvet.so",
+        "libwelvet.dylib",
+        "libwelvet.dll",
+        "libwelvet_mlx.dylib",
+        "libwelvet_metal.dylib",
+    ):
+        if (lib_dir / name).is_file():
+            siblings.append(name)
+    if siblings:
         sep = ";" if sysname == "windows" else ":"
-        key = "PATH" if sysname == "windows" else "LD_LIBRARY_PATH"
+        if sysname == "windows":
+            key = "PATH"
+        elif sysname == "darwin":
+            key = "DYLD_LIBRARY_PATH"
+        else:
+            key = "LD_LIBRARY_PATH"
         cur = os.environ.get(key, "")
         root = str(lib_dir)
         if root not in cur.split(sep):

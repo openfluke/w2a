@@ -35,7 +35,9 @@ def platform_dir() -> str:
 
 
 def asset_name(plat: str, version: str) -> str:
-    return f"welvet-cabi-{plat}-{version}.tar.gz"
+    # Release assets use hyphens (welvet-cabi-linux-amd64-…); plat dirs use underscores.
+    asset_plat = plat.replace("_", "-", 1)
+    return f"welvet-cabi-{asset_plat}-{version}.tar.gz"
 
 
 def download(url: str, dest: Path) -> None:

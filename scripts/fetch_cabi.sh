@@ -51,15 +51,16 @@ case "$mach" in
 	*) arch="$mach" ;;
 esac
 case "$sys" in
-	linux) plat="linux_${arch}" ;;
-	darwin) plat="macos_${arch}" ;;
+	linux) os=linux; plat="linux_${arch}" ;;
+	darwin) os=macos; plat="macos_${arch}" ;;
 	*)
 		echo "ERROR: unsupported platform $sys/$mach" >&2
 		exit 1
 		;;
 esac
 
-ASSET="welvet-cabi-${plat}-${ENGINE_VER}.tar.gz"
+# Release assets use hyphens (welvet-cabi-linux-amd64-…); install dir uses underscores.
+ASSET="welvet-cabi-${os}-${arch}-${ENGINE_VER}.tar.gz"
 DEST="$ROOT/python/src/welvet/${plat}"
 mkdir -p "$DEST"
 TMP="$(mktemp -d)"

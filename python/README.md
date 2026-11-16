@@ -11,17 +11,26 @@ next to `welvet.so` are pinned via `WELVET_*_LIBRARY`. Use `list_backends()` /
 
 ## Setup
 
-Prebuilt Linux CABI ships on **GitHub Releases** (not in git — ~50 MB `welvet.so`).
+Prebuilt CABI ships on **GitHub Releases** (not in git). PyPI wheels bundle the
+matching platform libs (`linux_amd64`, `macos_arm64`, …).
+
+```bash
+pip install welvet==1.1.2
+
+# Dev from checkout:
+cd w2a
+./scripts/fetch_cabi.sh cabi-v1.1.2   # or: python -m welvet.fetch_cabi cabi-v1.1.2
+cd python && pip install -e .
+python -m welvet.cabi_verify
+```
+
+Build/publish wheels (maintainers):
 
 ```bash
 cd w2a
-./scripts/fetch_cabi.sh          # pulls welvet-cabi-linux-amd64-*.tar.gz
-# or:  PYTHONPATH=python/src python -m welvet.fetch_cabi
-
-cd python
-pip install -e .   # or: PYTHONPATH=src
-python -m welvet.cabi_verify
-python -m welvet.w2a run --quick
+./scripts/fetch_cabi.sh cabi-v1.1.2          # linux + run on mac for macos, or curl both
+./scripts/build_pypi_wheels.sh               # → python/dist/*.whl
+twine upload python/dist/*.whl
 ```
 
 Build from source instead:

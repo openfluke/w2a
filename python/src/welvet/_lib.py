@@ -46,8 +46,9 @@ def lib_path() -> Path:
     for cand in here.glob(f"*/{_lib_name()}"):
         return cand
     raise FileNotFoundError(
-        f"Welvet C-ABI not found at {p}. Build: "
-        "cd apps/w2a/cabi/internal/build && ./build_linux.sh && ./copy_to_python.sh"
+        f"Welvet C-ABI not found at {p}. Fetch: "
+        "python -m welvet.fetch_cabi   # or: w2a/scripts/fetch_cabi.sh\n"
+        "Build: cd w2a && ./scripts/pack_cabi_linux.sh --build"
     )
 
 

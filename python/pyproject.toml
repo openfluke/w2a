@@ -5,21 +5,40 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "welvet"
 version = "1.1.2"
-description = "Welvet 1.1.2 AI Engine — C-ABI Python bindings: layers, dtypes, cameral, cuda/metal/rocm/vulkan backends"
+description = "Welvet Go AI engine v1.7.3 via Python C-ABI 1.1.2 — grids, layers, train, cuda/metal/rocm/vulkan"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "Apache-2.0"}
 authors = [{ name = "OpenFluke" }]
-keywords = ["welvet", "cameral", "wasm", "neural-network", "ctypes", "cabi"]
+keywords = [
+  "welvet",
+  "ai",
+  "neural-network",
+  "cuda",
+  "metal",
+  "vulkan",
+  "rocm",
+  "ctypes",
+  "cabi",
+  "cameral",
+]
 classifiers = [
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
   "License :: OSI Approved :: Apache Software License",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
 ]
 
 [project.urls]
 Homepage = "https://github.com/openfluke/welvet"
-Documentation = "https://github.com/openfluke/welvet/tree/main/apps/w2a/python"
+Documentation = "https://github.com/openfluke/w2a/tree/main/python"
+Repository = "https://github.com/openfluke/w2a"
+Changelog = "https://github.com/openfluke/w2a/releases"
+"CABI binaries" = "https://github.com/openfluke/w2a/releases/tag/cabi-v1.1.2"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

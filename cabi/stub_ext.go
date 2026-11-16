@@ -48,7 +48,8 @@ func WelvetListLayerTypes() *C.char {
 
 //export WelvetListBackends
 func WelvetListBackends() *C.char {
-	return jsonOut([]string{"cpu_tiled", "simd", "webgpu"})
+	// Rich probe (id / available / routing). Prefer WelvetProbeBackends for the same payload.
+	return WelvetProbeBackends()
 }
 
 //export WelvetSeedFrom

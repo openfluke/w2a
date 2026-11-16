@@ -1,4 +1,4 @@
-# binaries copied from cabi/internal/build/dist
+# binaries copied from cabi/internal/build/dist — ship via GitHub Release, not git
 src/welvet/linux_*/
 src/welvet/macos_*/
 src/welvet/windows_*/

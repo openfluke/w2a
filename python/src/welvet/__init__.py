@@ -1,4 +1,4 @@
-"""Welvet 1.1.1 — Python C-ABI bindings."""
+"""Welvet 1.1.2 — Python C-ABI bindings."""
 from __future__ import annotations
 
 import ctypes
@@ -8,8 +8,8 @@ from typing import Any, Sequence
 
 from ._lib import c_str, get_lib
 
-__version__ = "1.1.1"
-ENGINE_VERSION = "1.1.1"
+__version__ = "1.1.2"
+ENGINE_VERSION = "1.1.2"
 
 PLACE_KINDS = (
     "dense", "mha", "swiglu", "rmsnorm", "layernorm", "embedding", "softmax",
@@ -37,6 +37,10 @@ def _encode(spec: dict[str, Any] | str) -> bytes:
     return spec.encode() if isinstance(spec, str) else json.dumps(spec).encode()
 
 
+def last_error() -> str:
+    return c_str(get_lib().WelvetLastError())
+
+
 def create_grid(
     depth: int = 1,
     rows: int = 1,
@@ -44,6 +48,7 @@ def create_grid(
     layers_per_cell: int = 1,
     backend: str = "cpu_tiled",
 ) -> int:
+    """Create a grid. backend: cpu_tiled|simd|webgpu|native_cpu|cuda|metal|rocm|vulkan|qnn|mlx."""
     cfg = json.dumps(
         {
             "depth": depth,
@@ -55,12 +60,44 @@ def create_grid(
     ).encode()
     h = int(get_lib().WelvetCreateGrid(cfg))
     if h == 0:
-        raise RuntimeError("WelvetCreateGrid failed")
+        err = last_error() or "WelvetCreateGrid failed"
+        raise RuntimeError(err)
     return h
 
 
 def free_grid(handle: int) -> None:
     get_lib().WelvetFreeGrid(handle)
+
+
+def list_backends() -> list[dict]:
+    """Probe backends: [{id, backend, available, routing?, note?}]."""
+    return json.loads(c_str(get_lib().WelvetListBackends()))
+
+
+def probe_backends() -> list[dict]:
+    return json.loads(c_str(get_lib().WelvetProbeBackends()))
+
+
+def enable_backend(name: str) -> dict:
+    meta = json.loads(c_str(get_lib().WelvetEnableBackend(name.encode())))
+    if meta.get("error"):
+        raise RuntimeError(meta["error"])
+    return meta
+
+
+def set_grid_backend(handle: int, name: str) -> dict:
+    meta = json.loads(c_str(get_lib().WelvetSetGridBackend(handle, name.encode())))
+    if meta.get("error"):
+        raise RuntimeError(meta["error"])
+    return meta
+
+
+def prepare_grid(handle: int) -> dict:
+    """SyncToQNN / SyncToMLX when needed; no-op for routed cuda/metal/rocm/vulkan."""
+    meta = json.loads(c_str(get_lib().WelvetPrepareGrid(handle)))
+    if meta.get("error"):
+        raise RuntimeError(meta["error"])
+    return meta
 
 
 def place(handle: int, kind: str, spec: dict[str, Any] | str) -> dict:

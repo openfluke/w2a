@@ -1,18 +1,36 @@
-# Welvet Python (C-ABI) 1.1.1
+# Welvet Python (C-ABI) 1.1.2
 
 ctypes bindings over the Welvet shared library built from `apps/w2a/cabi`.
 
+**1.1.2** — `create_grid(backend=…)` selects `cpu_tiled` / `simd` / `webgpu` /
+`native_cpu` / `cuda` / `metal` / `rocm` / `vulkan` / `qnn` / `mlx`. Routed
+GPU backends call `EnableRouting` inside the CABI; sibling `libwelvet_*.so`
+next to `welvet.so` are pinned via `WELVET_*_LIBRARY`. Use `list_backends()` /
+`probe_backends()` to see what this host can attempt. For QNN/MLX call
+`prepare_grid(g)` after place (SyncTo*).
+
 ## Setup
 
-```bash
-cd apps/w2a/cabi/internal/build
-./build_linux.sh --test
-./copy_to_python.sh
+Prebuilt Linux CABI ships on **GitHub Releases** (not in git — ~50 MB `welvet.so`).
 
-cd ../../python
+```bash
+cd w2a
+./scripts/fetch_cabi.sh          # pulls welvet-cabi-linux-amd64-*.tar.gz
+# or:  PYTHONPATH=python/src python -m welvet.fetch_cabi
+
+cd python
 pip install -e .   # or: PYTHONPATH=src
 python -m welvet.cabi_verify
 python -m welvet.w2a run --quick
+```
+
+Build from source instead:
+
+```bash
+cd w2a/cabi/internal/build
+./build_linux.sh --test
+./copy_to_python.sh
+# or:  cd w2a && ./scripts/pack_cabi_linux.sh --build
 ```
 
 
@@ -21,7 +39,9 @@ python -m welvet.w2a run --quick
 ```python
 import welvet as w
 
-g = w.create_grid()
+print(w.list_backends())  # [{id, available, …}, …]
+
+g = w.create_grid(backend="cuda")  # or cpu_tiled / vulkan / …
 w.place_dense(g, {"in": 8, "out": 8, "act": "relu", "dtype": 1})
 out = w.forward(g, [0.1] * 8)
 w.train_sgd(g, [0.1] * 8, [0.0] * 8, lr=0.05)

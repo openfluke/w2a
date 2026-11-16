@@ -1,6 +1,12 @@
 # Welvet C-ABI (apps/w2a/cabi)
 
-Go `c-shared` / `c-archive` bridge for Welvet **1.1.1**. Mirrors Loom’s polyglot builder layout; exports mirror WASM `place*` + suites.
+Go `c-shared` / `c-archive` bridge for Welvet **1.1.2**. Mirrors Loom’s polyglot builder layout; exports mirror WASM `place*` + suites.
+
+**1.1.2** — `WelvetCreateGrid` backend string accepts `cpu_tiled` / `simd` /
+`webgpu` / `native_cpu` / `cuda` / `metal` / `rocm` / `vulkan` / `qnn` / `mlx`
+via `welvet/runtime/accel` (`EnableRouting` for routed GPUs). Also:
+`WelvetProbeBackends`, `WelvetEnableBackend`, `WelvetSetGridBackend`,
+`WelvetPrepareGrid`, `WelvetLastError`.
 
 ## Build
 
@@ -37,5 +43,6 @@ Outputs: `internal/build/dist/<os>_<arch>/welvet.so|dylib|dll|a` + `welvet.h` (+
 ## Exports (Welvet-native / WASM parity)
 
 - Grid: create/free, `WelvetPlace` + all `WelvetPlace*` (dense…gdn), `Forward`/`ForwardEx`, `TrainSGD`/`TrainSGDEx`/`TrainTween`/`TrainMesh`, convertDense, entity, DNA, `PermutationOK`
+- Backends: `WelvetListBackends` / `WelvetProbeBackends`, `WelvetEnableBackend`, `WelvetSetGridBackend`, `WelvetPrepareGrid`, `WelvetLastError`
 - Cameral: bicameral / hemispheres / parallel, setChild/BranchModes, TrainStackMSE / TrainParallelMSE
 - Lists + `WelvetRunSuite` / `WelvetRunAllSuites`

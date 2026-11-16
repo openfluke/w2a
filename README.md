@@ -325,16 +325,23 @@ cd typescript && npm test            # see typescript/README.md
 
 ## Release
 
-Attaches current `logs/suite.txt` + `logs/suite.pdf` to a GitHub Release tagged with the Welvet scorecard version from `../welvet/README.md`.
+Attaches current `logs/suite.txt` + `logs/suite.pdf` **and** a prebuilt
+`welvet-cabi-linux-amd64-*.tar.gz` (Python CABI + accel siblings) to a GitHub
+Release tagged with the Welvet scorecard version from `../welvet/README.md`.
+Platform `.so` trees stay **gitignored** — fetch them from the release.
 
 ```bash
 cd w2a
-go run .            # run suites → logs/suite.txt (+ export PDF if needed)
-./release.sh        # commit source, push, upload suite txt/pdf
+go run .                 # run suites → logs/suite.txt (+ export PDF if needed)
+./release.sh --build-cabi   # commit source, push, upload suite + CABI tarball
 ./release.sh --dry-run
+./scripts/pack_cabi_linux.sh --build   # pack only
+./scripts/fetch_cabi.sh                # download CABI into python/ (no Go)
+# or:  PYTHONPATH=python/src python -m welvet.fetch_cabi
 ```
 
-Needs `gh auth login` or `GITHUB_TOKEN`. `logs/` and `dist/` stay mostly gitignored (sample snapshots may remain).
+Needs `gh auth login` or `GITHUB_TOKEN`. `logs/`, `dist/`, and
+`python/src/welvet/linux_*/` stay gitignored.
 
 ---
 

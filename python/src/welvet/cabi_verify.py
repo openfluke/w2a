@@ -9,6 +9,7 @@ from welvet import (
     engine_version,
     forward,
     free_grid,
+    list_backends,
     list_dtypes,
     list_named_train_modes,
     list_suite_catalog,
@@ -44,6 +45,12 @@ REQUIRED = [
     "WelvetListFormats",
     "WelvetListLayerTypes",
     "WelvetListNamedTrainModes",
+    "WelvetListBackends",
+    "WelvetProbeBackends",
+    "WelvetLastError",
+    "WelvetEnableBackend",
+    "WelvetSetGridBackend",
+    "WelvetPrepareGrid",
     "WelvetCreateBicameral",
     "WelvetCreateHemispheres",
     "WelvetCreateParallel",
@@ -97,6 +104,9 @@ def main() -> int:
     print(f"[+] DTypes: {len(list_dtypes())}")
     print(f"[+] TrainModes: {len(list_named_train_modes())}")
     print(f"[+] Suite catalog: {len(list_suite_catalog())}")
+    backs = list_backends()
+    avail = [b["id"] for b in backs if b.get("available")]
+    print(f"[+] Backends: {len(backs)} ({', '.join(avail)} available)")
     print("[+] cabi_verify OK")
     return 0
 

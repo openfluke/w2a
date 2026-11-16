@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "welvet"
-version = "1.1.1"
-description = "Welvet 1.1.1 AI Engine — C-ABI Python bindings: layers, dtypes, cameral TrainModes, w2a suites"
+version = "1.1.2"
+description = "Welvet 1.1.2 AI Engine — C-ABI Python bindings: layers, dtypes, cameral, cuda/metal/rocm/vulkan backends"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "Apache-2.0"}

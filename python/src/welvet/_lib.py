@@ -51,11 +51,37 @@ def lib_path() -> Path:
     )
 
 
+def _pin_native_env(lib_dir: Path) -> None:
+    """Point WELVET_*_LIBRARY at sibling accel .so/.dll/.dylib next to welvet.so."""
+    sysname = platform.system().lower()
+    pairs = [
+        ("WELVET_CUDA_LIBRARY", "libwelvet_cuda.so" if sysname != "windows" else "libwelvet_cuda.dll"),
+        ("WELVET_ROCM_LIBRARY", "libwelvet_rocm.so"),
+        ("WELVET_VULKAN_LIBRARY", "libwelvet_vulkan.so"),
+        ("WELVET_METAL_LIBRARY", "libwelvet_metal.dylib"),
+    ]
+    for env, name in pairs:
+        cand = lib_dir / name
+        if cand.is_file():
+            os.environ.setdefault(env, str(cand))
+    # nativecpp is linked with rpath into the CABI build tree; also allow
+    # a sibling libwelvet.so shipped in the Python package platform dir.
+    cpp = lib_dir / ("libwelvet.dll" if sysname == "windows" else "libwelvet.so")
+    if cpp.is_file():
+        sep = ";" if sysname == "windows" else ":"
+        key = "PATH" if sysname == "windows" else "LD_LIBRARY_PATH"
+        cur = os.environ.get(key, "")
+        root = str(lib_dir)
+        if root not in cur.split(sep):
+            os.environ[key] = root + (sep + cur if cur else "")
+
+
 def get_lib() -> ctypes.CDLL:
     global _LIB
     if _LIB is not None:
         return _LIB
     path = lib_path()
+    _pin_native_env(path.parent)
     if platform.system().lower() == "linux":
         _LIB = ctypes.CDLL(str(path), mode=ctypes.RTLD_GLOBAL)
     else:
@@ -180,6 +206,18 @@ def _configure(lib: ctypes.CDLL) -> None:
     lib.WelvetListNamedTrainModes.restype = ctypes.c_void_p
     lib.WelvetListSuiteCatalog.argtypes = []
     lib.WelvetListSuiteCatalog.restype = ctypes.c_void_p
+    lib.WelvetListBackends.argtypes = []
+    lib.WelvetListBackends.restype = ctypes.c_void_p
+    lib.WelvetProbeBackends.argtypes = []
+    lib.WelvetProbeBackends.restype = ctypes.c_void_p
+    lib.WelvetLastError.argtypes = []
+    lib.WelvetLastError.restype = ctypes.c_void_p
+    lib.WelvetEnableBackend.argtypes = [ctypes.c_char_p]
+    lib.WelvetEnableBackend.restype = ctypes.c_void_p
+    lib.WelvetSetGridBackend.argtypes = [ctypes.c_longlong, ctypes.c_char_p]
+    lib.WelvetSetGridBackend.restype = ctypes.c_void_p
+    lib.WelvetPrepareGrid.argtypes = [ctypes.c_longlong]
+    lib.WelvetPrepareGrid.restype = ctypes.c_void_p
 
     lib.WelvetCreateBicameral.argtypes = [ctypes.c_char_p]
     lib.WelvetCreateBicameral.restype = ctypes.c_longlong

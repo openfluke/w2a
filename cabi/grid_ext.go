@@ -14,6 +14,7 @@ import (
 	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/layers/dense"
 	"github.com/openfluke/welvet/quant"
+	"github.com/openfluke/welvet/runtime/accel"
 	"github.com/openfluke/welvet/runtime/forward"
 	"github.com/openfluke/welvet/runtime/training"
 	"github.com/openfluke/welvet/stub/serialization"
@@ -44,9 +45,11 @@ type placeSpec struct {
 
 //export WelvetCreateGrid
 func WelvetCreateGrid(cfgJSON *C.char) C.longlong {
+	clearLastErr()
 	raw := C.GoString(cfgJSON)
 	var spec gridSpec
 	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
+		setLastErr(err.Error())
 		return 0
 	}
 	if spec.Depth < 1 {
@@ -61,14 +64,19 @@ func WelvetCreateGrid(cfgJSON *C.char) C.longlong {
 	if spec.LayersPerCell < 1 {
 		spec.LayersPerCell = 1
 	}
+	backend, err := accel.Parse(spec.Backend)
+	if err != nil {
+		setLastErr(err.Error())
+		return 0
+	}
+	if err := accel.Ensure(backend); err != nil {
+		setLastErr(err.Error())
+		return 0
+	}
 	g := architecture.NewGrid(spec.Depth, spec.Rows, spec.Cols, spec.LayersPerCell)
-	switch spec.Backend {
-	case "simd", "SIMD":
-		g.Exec.Backend = core.BackendSIMD
-	case "webgpu", "WebGPU":
-		g.Exec.Backend = core.BackendWebGPU
-	default:
-		g.Exec.Backend = core.BackendCPUTiled
+	g.Exec.Backend = backend
+	if backend != core.BackendCPUTiled {
+		g.Exec.BackendPinned = true
 	}
 	return C.longlong(storeGrid(g))
 }

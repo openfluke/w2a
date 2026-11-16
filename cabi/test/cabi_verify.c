@@ -25,10 +25,10 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	printf("WelvetEngineVersion=%s\n", v);
-	int ok = strcmp(v, "1.1.1") == 0;
+	int ok = strcmp(v, "1.1.2") == 0;
 	freefn(v);
 	if (!ok) {
-		fprintf(stderr, "expected 1.1.1\n");
+		fprintf(stderr, "expected 1.1.2\n");
 		return 1;
 	}
 	printf("cabi_verify OK\n");
